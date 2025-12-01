@@ -10,6 +10,7 @@ call plug#begin(stdpath('data') . '/plugged')
 " Core
 Plug 'tpope/vim-sensible'
 Plug 'tpope/vim-fugitive'
+Plug 'stevearc/overseer.nvim'
 
 " File tree
 Plug 'preservim/nerdtree'

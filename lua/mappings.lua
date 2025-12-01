@@ -83,3 +83,12 @@ map('n', '<leader>cl', '<Plug>(coc-codelens-action)', opts)
 map('n', '<C-s>', '<Plug>(coc-range-select)', opts)
 map('x', '<C-s>', '<Plug>(coc-range-select)', opts)
 
+-- =========================
+-- Task Runner (Overseer)
+-- =========================
+-- Toggle the task window
+map('n', '<leader>to', ':OverseerToggle<CR>', opts)
+-- Run a pre-defined task
+map('n', '<leader>tr', ':OverseerRun<CR>', opts)
+-- Run the last task again
+map('n', '<leader>tl', ':OverseerRunLast<CR>', opts)
