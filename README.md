@@ -35,7 +35,7 @@ This repository contains a modular and robust Neovim configuration. It is built 
 
 2.  **Clone this repository:**
     ```bash
-    git clone [https://your-repository-url.git](https://your-repository-url.git) ~/.config/nvim
+    git clone [https://github.com/christopherhagler/nvim.git](https://github.com/christopherhagler/nvim.git) ~/.config/nvim
     ```
 
 3.  **Install Plugins:**
