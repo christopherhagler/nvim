@@ -12,7 +12,7 @@ local test_cmd = string.format("pytest %s", vim.fn.expand("%"))
 local run_cmd = string.format("python3 %s", vim.fn.expand("%"))
 
 -- <leader>c to run tests in a terminal window
-map('n', '<leader>c', string.format(':OverseerRunCmd strategy=terminal %s<CR>', test_cmd), opts)
+map('n', '<leader>c', string.format(':OverseerShell strategy=terminal %s<CR>', test_cmd), opts)
 
 -- <leader>x to run the script in a terminal window
-map('n', '<leader>x', string.format(':OverseerRunCmd strategy=terminal %s<CR>', run_cmd), opts)
+map('n', '<leader>x', string.format(':OverseerShell strategy=terminal %s<CR>', run_cmd), opts)

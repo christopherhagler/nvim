@@ -6,9 +6,9 @@ syntax on
 lua require('options')
 lua require('plugins')
 lua require('mappings')
-lua require('plugin_config/treesitter')
-lua require('plugin_config/lualine')
-lua require('plugin_config/overseer')
+lua require('plugin_config.treesitter')
+lua require('plugin_config.lualine')
+lua require('plugin_config.overseer')
 
 let g:gutentags_ctags_tagfile = '.tags'
 

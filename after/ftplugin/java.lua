@@ -13,7 +13,7 @@ local build_cmd = string.format("javac %s", vim.fn.expand("%"))
 local run_cmd = string.format("java %s", vim.fn.expand("%:r"))
 
 -- <leader>c to build asynchronously
-map('n', '<leader>c', string.format(':OverseerRunCmd %s<CR>', build_cmd), opts)
+map('n', '<leader>c', string.format(':OverseerShell %s<CR>', build_cmd), opts)
 
 -- <leader>x to run in a terminal window
-map('n', '<leader>x', string.format(':OverseerRunCmd strategy=terminal %s<CR>', run_cmd), opts)
+map('n', '<leader>x', string.format(':OverseerShell strategy=terminal %s<CR>', run_cmd), opts)

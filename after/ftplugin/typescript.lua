@@ -12,7 +12,7 @@ local lint_cmd = string.format("npx eslint %s", vim.fn.expand("%"))
 local run_cmd = string.format("npx ts-node %s", vim.fn.expand("%"))
 
 -- <leader>c to run linter
-map('n', '<leader>c', string.format(':OverseerRunCmd %s<CR>', lint_cmd), opts)
+map('n', '<leader>c', string.format(':OverseerShell %s<CR>', lint_cmd), opts)
 
 -- <leader>x to run the script in a terminal window
-map('n', '<leader>x', string.format(':OverseerRunCmd strategy=terminal %s<CR>', run_cmd), opts)
+map('n', '<leader>x', string.format(':OverseerShell strategy=terminal %s<CR>', run_cmd), opts)
