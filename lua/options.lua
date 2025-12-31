@@ -31,3 +31,8 @@ vim.api.nvim_create_autocmd("BufWritePre", {
   group = vim.api.nvim_create_augroup("CoCFormatOnSave", { clear = true }),
   desc = "Format buffer with CoC on save",
 })
+
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = { '<filetype>' },
+  callback = function() vim.treesitter.start() end,
+})
