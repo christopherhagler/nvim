@@ -2,36 +2,36 @@ return {
   {
     "akinsho/toggleterm.nvim",
     version = "*",
-    keys = { "<leader>t" },
+    keys = { { "<leader>t", "<cmd>ToggleTerm<cr>", desc = "Toggle terminal" } },
     config = function()
       require("toggleterm").setup({
         size = function(term)
-          if term.direction == "horizontal" then return 18
-          elseif term.direction == "vertical" then return math.floor(vim.o.columns * 0.4)
+          if term.direction == "horizontal" then
+            return 18
+          elseif term.direction == "vertical" then
+            return math.floor(vim.o.columns * 0.4)
           end
         end,
-        direction = "horizontal",
+        direction     = "horizontal",
         shade_terminals = true,
-        persist_size = true,
-        persist_mode = true,
+        persist_size  = true,
+        persist_mode  = true,
         close_on_exit = true,
-        shell = vim.o.shell,
+        shell         = vim.o.shell,
       })
 
-      vim.keymap.set("n", "<leader>t", "<cmd>ToggleTerm<cr>", { desc = "Toggle terminal" })
-
-      -- In terminal mode: Esc returns to normal, <C-h/j/k/l> navigates windows
+      -- Terminal-mode keymaps: applied per-terminal buffer on open
       local function set_terminal_keymaps()
         local opts = { buffer = 0 }
-        vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", opts)
-        vim.keymap.set("t", "<C-h>", "<C-\\><C-n><C-w>h", opts)
-        vim.keymap.set("t", "<C-j>", "<C-\\><C-n><C-w>j", opts)
-        vim.keymap.set("t", "<C-k>", "<C-\\><C-n><C-w>k", opts)
-        vim.keymap.set("t", "<C-l>", "<C-\\><C-n><C-w>l", opts)
+        vim.keymap.set("t", "<Esc>",   "<C-\\><C-n>",       opts)
+        vim.keymap.set("t", "<C-h>",   "<C-\\><C-n><C-w>h", opts)
+        vim.keymap.set("t", "<C-j>",   "<C-\\><C-n><C-w>j", opts)
+        vim.keymap.set("t", "<C-k>",   "<C-\\><C-n><C-w>k", opts)
+        vim.keymap.set("t", "<C-l>",   "<C-\\><C-n><C-w>l", opts)
       end
 
       vim.api.nvim_create_autocmd("TermOpen", {
-        pattern = "term://*toggleterm#*",
+        pattern  = "term://*toggleterm#*",
         callback = set_terminal_keymaps,
       })
     end,

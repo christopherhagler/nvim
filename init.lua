@@ -15,6 +15,10 @@ if not (vim.uv or vim.loop).fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+-- Disable unused providers to suppress checkhealth warnings
+vim.g.loaded_perl_provider = 0
+vim.g.loaded_ruby_provider = 0
+
 require("config.options")
 require("config.keymaps")
 require("config.autocmds")
@@ -22,4 +26,5 @@ require("config.autocmds")
 require("lazy").setup("plugins", {
   change_detection = { notify = false },
   ui = { border = "rounded" },
+  rocks = { enabled = false },
 })

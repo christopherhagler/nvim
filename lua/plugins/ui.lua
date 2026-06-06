@@ -5,20 +5,31 @@ return {
     priority = 1000,
     config = function()
       require("tokyonight").setup({
-        style = "night",       -- night | storm | moon | day
+        style = "moon",
         light_style = "day",
         transparent = false,
         terminal_colors = true,
+        dim_inactive = true,
+        lualine_bold = true,
         styles = {
           comments = { italic = true },
           keywords = { italic = true },
-          functions = {},
+          functions = { bold = true },
           variables = {},
           sidebars = "dark",
           floats = "dark",
         },
-        sidebars = { "qf", "help", "terminal", "nvim-tree" },
-        lualine_bold = true,
+        sidebars = { "qf", "help", "terminal", "neo-tree", "nvim-tree" },
+        on_highlights = function(hl, c)
+          -- Visible matching brackets
+          hl.MatchParen = { fg = c.orange, bold = true, underline = true }
+          -- Stronger indent scope line
+          hl.IblScope = { fg = c.blue2 }
+          -- Popup menu selection stands out more
+          hl.PmenuSel = { bg = c.blue, fg = c.bg }
+          -- Float borders match the theme
+          hl.FloatBorder = { fg = c.blue1, bg = c.bg_float }
+        end,
       })
       vim.cmd.colorscheme("tokyonight")
     end,
@@ -29,6 +40,18 @@ return {
     "nvim-lualine/lualine.nvim",
     dependencies = { "nvim-tree/nvim-web-devicons" },
     config = function()
+      local function lsp_client()
+        local clients = vim.lsp.get_clients({ bufnr = 0 })
+        if #clients == 0 then return "" end
+        local names = {}
+        for _, c in ipairs(clients) do
+          if c.name ~= "null-ls" and c.name ~= "copilot" then
+            table.insert(names, c.name)
+          end
+        end
+        return #names > 0 and ("  " .. table.concat(names, ", ")) or ""
+      end
+
       require("lualine").setup({
         options = {
           icons_enabled = true,
@@ -36,12 +59,13 @@ return {
           component_separators = { left = "", right = "" },
           section_separators = { left = "", right = "" },
           globalstatus = true,
+          disabled_filetypes = { statusline = { "neo-tree", "nvim-tree" } },
         },
         sections = {
           lualine_a = { "mode" },
           lualine_b = { "branch", "diff", "diagnostics" },
-          lualine_c = { { "filename", path = 1 } },
-          lualine_x = { "encoding", "fileformat", "filetype" },
+          lualine_c = { { "filename", path = 1, symbols = { modified = " ●", readonly = " ", unnamed = "[No Name]" } } },
+          lualine_x = { lsp_client, "encoding", "fileformat", "filetype" },
           lualine_y = { "progress" },
           lualine_z = { "location" },
         },
@@ -108,13 +132,17 @@ return {
       local wk = require("which-key")
       wk.setup({})
       wk.add({
-        { "<leader>f", group = "Find" },
-        { "<leader>l", group = "LSP" },
+        { "<leader>a", group = "Actions" },
         { "<leader>d", group = "Debug" },
+        { "<leader>f", group = "Find" },
         { "<leader>g", group = "Git" },
         { "<leader>h", group = "Hunks" },
-        { "<leader>x", group = "Diagnostics" },
+        { "<leader>l", group = "LSP" },
+        { "<leader>n", group = "Explorer" },
         { "<leader>q", group = "Session" },
+        { "<leader>r", group = "Refactor" },
+        { "<leader>t", group = "Terminal" },
+        { "<leader>x", group = "Diagnostics" },
       })
     end,
   },
