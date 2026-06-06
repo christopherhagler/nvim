@@ -20,7 +20,7 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 
 ## Prerequisites
 
-- **Neovim** >= 0.9.0
+- **Neovim** >= 0.10.0 (0.12.x recommended)
 - **Git**
 - **ripgrep** — live grep in Telescope
 - **make** — required to build the telescope-fzf-native extension

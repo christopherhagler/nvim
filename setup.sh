@@ -14,7 +14,7 @@ RAW_URL="https://raw.githubusercontent.com/christopherhagler/nvim/development/se
 NVIM_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
 NVIM_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nvim"
 NVIM_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/nvim"
-MIN_NVIM_VERSION="0.9.0"
+MIN_NVIM_VERSION="0.10.0"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then

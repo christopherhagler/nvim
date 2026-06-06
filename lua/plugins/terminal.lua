@@ -10,11 +10,7 @@ return {
           elseif term.direction == "vertical" then return math.floor(vim.o.columns * 0.4)
           end
         end,
-        direction = "float",
-        float_opts = {
-          border = "curved",
-          winblend = 3,
-        },
+        direction = "horizontal",
         shade_terminals = true,
         persist_size = true,
         persist_mode = true,
