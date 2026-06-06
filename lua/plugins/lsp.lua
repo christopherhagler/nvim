@@ -161,9 +161,6 @@ return {
         map("]g",          vim.diagnostic.goto_next, "Next diagnostic")
         map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to quickfix")
 
-        -- Aerial outline integration
-        require("aerial").on_attach(client, bufnr)
-
         -- CodeLens refresh (namespaced augroup prevents stacking on re-attach)
         if client.supports_method("textDocument/codeLens") then
           vim.lsp.codelens.refresh()
