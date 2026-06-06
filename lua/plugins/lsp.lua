@@ -115,7 +115,6 @@ return {
           "jsonls",   -- JSON
           "lua_ls",   -- Lua (for editing this config)
           "bashls",   -- Bash/Shell
-          "asm_lsp",  -- Assembly
         },
       })
 
@@ -216,9 +215,7 @@ return {
         },
       })
 
-      vim.lsp.config("asm_lsp", {
-        filetypes = { "asm", "s", "S" },
-      })
+
     end,
   },
 }
