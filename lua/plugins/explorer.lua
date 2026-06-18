@@ -5,7 +5,7 @@ return {
     dependencies = { "nvim-tree/nvim-web-devicons" },
     keys = {
       { "<leader>n", "<cmd>NvimTreeToggle<cr>", desc = "Toggle file explorer" },
-      { "<leader>nf", "<cmd>NvimTreeFindFile<cr>", desc = "Reveal file in explorer" },
+      { "<leader>N", "<cmd>NvimTreeFindFile<cr>", desc = "Reveal file in explorer" },
     },
     config = function()
       require("nvim-tree").setup({

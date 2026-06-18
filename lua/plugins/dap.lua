@@ -10,18 +10,20 @@ return {
       "mfussenegger/nvim-dap-python",
     },
     keys = {
-      { "<leader>db", function() require("dap").toggle_breakpoint() end, desc = "Toggle breakpoint" },
       { "<leader>dB", function()
           require("dap").set_breakpoint(vim.fn.input("Condition: "))
         end, desc = "Conditional breakpoint" },
-      { "<leader>dc", function() require("dap").continue() end,    desc = "Continue / Start" },
-      { "<leader>dn", function() require("dap").step_over() end,   desc = "Step over" },
-      { "<leader>di", function() require("dap").step_into() end,   desc = "Step into" },
-      { "<leader>do", function() require("dap").step_out() end,    desc = "Step out" },
       { "<leader>dr", function() require("dap").repl.open() end,   desc = "Debug REPL" },
       { "<leader>dl", function() require("dap").run_last() end,    desc = "Run last" },
       { "<leader>du", function() require("dapui").toggle() end,    desc = "Toggle debug UI" },
-      { "<leader>dx", function() require("dap").terminate() end,   desc = "Terminate" },
+
+      -- VSCode-style function-key debugging
+      { "<F5>",    function() require("dap").continue() end,          desc = "Debug: Continue / Start" },
+      { "<S-F5>",  function() require("dap").terminate() end,         desc = "Debug: Terminate" },
+      { "<F9>",    function() require("dap").toggle_breakpoint() end, desc = "Debug: Toggle breakpoint" },
+      { "<F10>",   function() require("dap").step_over() end,         desc = "Debug: Step over" },
+      { "<F11>",   function() require("dap").step_into() end,         desc = "Debug: Step into" },
+      { "<S-F11>", function() require("dap").step_out() end,          desc = "Debug: Step out" },
     },
     config = function()
       local dap = require("dap")

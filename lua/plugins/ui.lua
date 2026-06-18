@@ -132,16 +132,13 @@ return {
       local wk = require("which-key")
       wk.setup({})
       wk.add({
-        { "<leader>a", group = "Actions" },
         { "<leader>d", group = "Debug" },
         { "<leader>f", group = "Find" },
         { "<leader>g", group = "Git" },
         { "<leader>h", group = "Hunks" },
         { "<leader>l", group = "LSP" },
-        { "<leader>n", group = "Explorer" },
         { "<leader>q", group = "Session" },
         { "<leader>r", group = "Refactor" },
-        { "<leader>t", group = "Terminal" },
         { "<leader>x", group = "Diagnostics" },
       })
     end,

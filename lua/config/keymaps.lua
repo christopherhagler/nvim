@@ -23,3 +23,13 @@ map("n", "<C-u>", "<C-u>zz", { desc = "Scroll up" })
 -- Better indenting in visual mode (stay in visual)
 map("v", "<", "<gv", { desc = "Indent left" })
 map("v", ">", ">gv", { desc = "Indent right" })
+
+-- Clear search highlight
+map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
+
+-- Buffer navigation
+map("n", "]b", "<cmd>bnext<cr>",     { desc = "Next buffer" })
+map("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
+
+-- Show diagnostics for the current line
+map("n", "<leader>e", vim.diagnostic.open_float, { desc = "Line diagnostics" })

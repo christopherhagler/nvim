@@ -153,7 +153,7 @@ return {
         map("<leader>re", function()
           vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
         end, "Refactor")
-        map("<leader>cl", vim.lsp.codelens.run, "CodeLens action")
+        map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
         map("<leader>lf", function() vim.lsp.buf.format({ async = true }) end, "Format buffer")
 
         -- Diagnostics
