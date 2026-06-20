@@ -154,7 +154,7 @@ return {
           vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
         end, "Refactor")
         map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
-        map("<leader>lf", function() vim.lsp.buf.format({ async = true }) end, "Format buffer")
+        map("<leader>lf", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, "Format buffer")
 
         -- Diagnostics
         map("[g",          vim.diagnostic.goto_prev, "Prev diagnostic")

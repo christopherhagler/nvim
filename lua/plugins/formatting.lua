@@ -1,13 +1,32 @@
 return {
-  -- Formatter: clangd handles C/C++ via LSP (lsp_fallback), explicit formatters for everything else
+  -- Formatter: conform runs an explicit formatter per filetype (clang-format for C/C++)
   {
     "stevearc/conform.nvim",
-    event = "BufWritePre",
     cmd = "ConformInfo",
     config = function()
+      -- C/C++ default style lives here (not in a ~/.clang-format): K&R braces,
+      -- 4-space indent, 120-column limit. If a project provides its own
+      -- .clang-format, that file is used instead (--style=file).
+      local clang_style =
+        "{BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never, "
+        .. "ColumnLimit: 120, BreakBeforeBraces: Attach, "
+        .. "AllowShortFunctionsOnASingleLine: None, PointerAlignment: Right, SortIncludes: true}"
+
       require("conform").setup({
+        formatters = {
+          clang_format = {
+            prepend_args = function(_, ctx)
+              local project = vim.fs.find({ ".clang-format", "_clang-format" }, {
+                upward = true,
+                path = ctx.dirname,
+              })[1]
+              return { "--style=" .. (project and "file" or clang_style) }
+            end,
+          },
+        },
         formatters_by_ft = {
-          -- C/C++ intentionally omitted: clangd (LSP) formats via lsp_fallback
+          c          = { "clang_format" },
+          cpp        = { "clang_format" },
           python     = { "black", "isort" },
           javascript = { "prettier" },
           typescript = { "prettier" },
@@ -21,10 +40,7 @@ return {
           lua   = { "stylua" },
           sh    = { "shfmt" },
         },
-        format_on_save = {
-          timeout_ms = 500,
-          lsp_fallback = true,
-        },
+        -- Format manually with <leader>lf (no format-on-save)
       })
     end,
   },
@@ -36,7 +52,7 @@ return {
     opts = {
       ensure_installed = {
         -- Formatters
-        "black", "isort", "prettier", "stylua", "shfmt",
+        "black", "isort", "prettier", "stylua", "shfmt", "clang-format",
         -- Linters
         "flake8", "eslint_d", "shellcheck",
         -- Debug adapters

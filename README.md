@@ -8,6 +8,7 @@ A Lua-first Neovim setup targeting C/C++, Python, and web development. Uses `laz
 - [Installation](#installation)
 - [File Structure](#file-structure)
 - [Key Mappings](#key-mappings)
+- [Formatting](#formatting)
 - [Plugins](#plugins)
 
 ## Quick Install
@@ -20,7 +21,7 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 
 ## Prerequisites
 
-- **Neovim** >= 0.10.0 (0.12.x recommended)
+- **Neovim** >= 0.11.0 (0.12.x recommended) — native `vim.lsp` config requires 0.11+
 - **Git**
 - **ripgrep** — live grep in Telescope
 - **make** — required to build the telescope-fzf-native extension
@@ -73,18 +74,18 @@ lua/
     keymaps.lua             # Global key mappings
     autocmds.lua            # Autocommands (whitespace trim, yank highlight, etc.)
   plugins/
-    ui.lua                  # Catppuccin, lualine, which-key, indent guides
+    ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
     editor.lua              # Treesitter, autopairs, Comment.nvim, surround
     explorer.lua            # nvim-tree (file explorer), aerial (symbols outline)
     telescope.lua           # Fuzzy finder
-    lsp.lua                 # Mason, nvim-lspconfig, nvim-cmp, snippets
-    formatting.lua          # conform.nvim (clangd handles C/C++ via LSP)
+    lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, nvim-cmp, snippets
+    formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt)
     linting.lua             # nvim-lint (flake8, eslint_d, shellcheck)
     dap.lua                 # nvim-dap + UI, codelldb (C/C++), debugpy (Python)
     git.lua                 # vim-fugitive, gitsigns
     terminal.lua            # toggleterm
 after/ftplugin/             # Per-language indentation settings
-  c.lua, cpp.lua, python.lua, javascript.lua, typescript.lua, sh.lua, java.lua
+  asm.lua, c.lua, cpp.lua, python.lua, javascript.lua, typescript.lua, sh.lua
 ```
 
 ## Key Mappings
@@ -99,6 +100,7 @@ Leader key: `,`
 | `jk` | Exit insert mode |
 | `<C-d>` / `<C-u>` | Scroll down / up (centered) |
 | `n` / `N` | Next / prev search result (centered) |
+| `<Esc>` | Clear search highlight |
 | `<leader>t` | Toggle floating terminal |
 
 ### Navigation
@@ -106,8 +108,9 @@ Leader key: `,`
 | Key | Action |
 | :--- | :--- |
 | `<C-h/j/k/l>` | Move between windows |
+| `[b` / `]b` | Previous / next buffer |
 | `<leader>n` | Toggle file explorer (nvim-tree) |
-| `<leader>nf` | Reveal current file in explorer |
+| `<leader>N` | Reveal current file in explorer |
 | `<F8>` | Toggle symbols outline (aerial) |
 
 ### Telescope
@@ -133,27 +136,30 @@ Leader key: `,`
 | `gr` | Find references |
 | `K` | Hover documentation |
 | `<leader>rn` | Rename symbol |
-| `<leader>a` / `<leader>ac` | Code actions |
+| `<leader>a` | Code actions |
 | `<leader>re` | Refactor |
-| `<leader>cl` | CodeLens action |
-| `<leader>lf` | Format buffer |
-| `<leader>qf` | Quickfix diagnostics |
+| `<leader>lc` | CodeLens action |
+| `<leader>lf` | Format buffer (manual; via conform) |
+| `<leader>e` | Show line diagnostics |
+| `<leader>xf` | Send diagnostics to location list |
 | `[g` / `]g` | Prev / next diagnostic |
 
 ### Debugger (nvim-dap)
 
+VSCode-style function keys for stepping, plus leader mappings for the rest.
+
 | Key | Action |
 | :--- | :--- |
-| `<leader>db` | Toggle breakpoint |
+| `<F5>` | Continue / start |
+| `<S-F5>` | Terminate |
+| `<F9>` | Toggle breakpoint |
+| `<F10>` | Step over |
+| `<F11>` | Step into |
+| `<S-F11>` | Step out |
 | `<leader>dB` | Conditional breakpoint |
-| `<leader>dc` | Continue / start |
-| `<leader>dn` | Step over |
-| `<leader>di` | Step into |
-| `<leader>do` | Step out |
 | `<leader>du` | Toggle DAP UI |
 | `<leader>dr` | Debug REPL |
 | `<leader>dl` | Run last |
-| `<leader>dx` | Terminate |
 
 ### Diagnostics (Trouble)
 
@@ -188,6 +194,22 @@ Leader key: `,`
 | `<leader>hp` | Preview hunk |
 | `<leader>hb` | Blame line |
 
+## Formatting
+
+Formatting is handled by [conform.nvim](https://github.com/stevearc/conform.nvim) and is **manual** — there is no format-on-save. Format the current buffer with `<leader>lf`.
+
+| Filetype | Formatter |
+| :--- | :--- |
+| C / C++ | `clang-format` |
+| Python | `black`, `isort` |
+| JS / TS / HTML / CSS / JSON / YAML | `prettier` |
+| Lua | `stylua` |
+| Shell | `shfmt` |
+
+### C/C++ style
+
+The default C/C++ style lives in `lua/plugins/formatting.lua` (not in a global `~/.clang-format`): **K&R braces, 4-space indent, 120-column limit**. If a project provides its own `.clang-format`, conform detects it and uses that file instead (`--style=file`) — so per-project overrides just work by adding a `.clang-format` to the project.
+
 ## Plugins
 
 Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
@@ -214,10 +236,10 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `stevearc/aerial.nvim` | LSP-powered symbols outline |
 | `nvim-telescope/telescope.nvim` | Fuzzy finder |
 | `williamboman/mason.nvim` | LSP/tool installer |
-| `neovim/nvim-lspconfig` | LSP client configuration |
+| `williamboman/mason-lspconfig.nvim` | Bridges Mason with native `vim.lsp` config (Neovim 0.11+) |
 | `hrsh7th/nvim-cmp` | Completion engine |
 | `L3MON4D3/LuaSnip` | Snippet engine |
-| `stevearc/conform.nvim` | Formatting (clangd for C/C++, prettier/black for others) |
+| `stevearc/conform.nvim` | Formatting — clang-format (C/C++), prettier, black/isort, stylua, shfmt |
 | `mfussenegger/nvim-lint` | Linting (flake8, eslint_d, shellcheck) |
 | `mfussenegger/nvim-dap` | Debug adapter protocol |
 | `rcarriga/nvim-dap-ui` | Debug UI |

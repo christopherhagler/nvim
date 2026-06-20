@@ -14,7 +14,7 @@ RAW_URL="https://raw.githubusercontent.com/christopherhagler/nvim/development/se
 NVIM_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
 NVIM_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nvim"
 NVIM_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/nvim"
-MIN_NVIM_VERSION="0.10.0"
+MIN_NVIM_VERSION="0.11.0"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -113,7 +113,13 @@ backup_config() {
 }
 
 run_nvim_headless() {
-  nvim --headless -c "$1" -c "qa!" 2>/dev/null || true
+  # Run a headless command; on failure, surface the output instead of hiding it.
+  local out
+  if ! out=$(nvim --headless -c "$1" -c "qa!" 2>&1); then
+    [ -n "$out" ] && echo "$out" >&2
+    return 1
+  fi
+  return 0
 }
 
 # ── Commands ───────────────────────────────────────────────────────────────────
@@ -150,8 +156,11 @@ cmd_install() {
   ok "Repository cloned"
 
   info "Bootstrapping lazy.nvim and installing plugins..."
-  run_nvim_headless "Lazy! sync"
-  ok "Plugins installed"
+  if run_nvim_headless "Lazy! sync"; then
+    ok "Plugins installed"
+  else
+    warn "Plugin install reported errors — open Neovim and run :Lazy to inspect"
+  fi
 
   echo ""
   ok "Installation complete!"
@@ -183,12 +192,18 @@ cmd_update() {
   ok "Config updated"
 
   info "Syncing plugins..."
-  run_nvim_headless "Lazy! sync"
-  ok "Plugins synced"
+  if run_nvim_headless "Lazy! sync"; then
+    ok "Plugins synced"
+  else
+    warn "Plugin sync reported errors — open Neovim and run :Lazy to inspect"
+  fi
 
   info "Updating Mason packages..."
-  run_nvim_headless "MasonUpdate"
-  ok "Mason packages updated"
+  if run_nvim_headless "MasonUpdate"; then
+    ok "Mason packages updated"
+  else
+    warn "Mason update reported errors — open Neovim and run :Mason to inspect"
+  fi
 
   ok "Update complete!"
 }
@@ -239,12 +254,11 @@ cmd_health() {
   fi
 
   echo ""
-  info "Tools:"
+  info "External tools (must be on your PATH):"
   local tools=(
     "git:git" "rg:ripgrep" "make:make"
     "node:Node.js" "python3:Python 3"
-    "clang:clang" "clangd:clangd"
-    "black:black" "prettier:prettier" "shellcheck:shellcheck"
+    "clang:clang"
   )
   for entry in "${tools[@]}"; do
     local cmd="${entry%%:*}" label="${entry##*:}"
@@ -255,6 +269,9 @@ cmd_health() {
       warn "  ${label} — not found"
     fi
   done
+  echo ""
+  info "clangd, formatters, linters, and debug adapters are managed by Mason —"
+  info "verify those with :Mason or :checkhealth (checked below)."
 
   if [ -d "$NVIM_CONFIG_DIR" ]; then
     echo ""
