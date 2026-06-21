@@ -216,7 +216,7 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 
 | Plugin | Purpose |
 | :--- | :--- |
-| `folke/tokyonight.nvim` | Colorscheme (night style) |
+| `folke/tokyonight.nvim` | Colorscheme (moon style) |
 | `folke/trouble.nvim` | Project-wide diagnostics panel |
 | `folke/persistence.nvim` | Session save/restore per working directory |
 | `nvim-lualine/lualine.nvim` | Status line |

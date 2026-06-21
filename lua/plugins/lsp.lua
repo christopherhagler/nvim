@@ -157,12 +157,12 @@ return {
         map("<leader>lf", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, "Format buffer")
 
         -- Diagnostics
-        map("[g",          vim.diagnostic.goto_prev, "Prev diagnostic")
-        map("]g",          vim.diagnostic.goto_next, "Next diagnostic")
+        map("[g",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
+        map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
         map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to quickfix")
 
         -- CodeLens refresh (namespaced augroup prevents stacking on re-attach)
-        if client.supports_method("textDocument/codeLens") then
+        if client:supports_method("textDocument/codeLens") then
           vim.lsp.codelens.refresh()
           vim.api.nvim_create_autocmd({ "BufEnter", "InsertLeave" }, {
             group    = vim.api.nvim_create_augroup("lsp_codelens_" .. bufnr, { clear = true }),
