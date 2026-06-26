@@ -63,7 +63,14 @@ return {
       -- Uses the debugpy installed by mason-tool-installer
       require("dap-python").setup(vim.fn.stdpath("data") .. "/mason/packages/debugpy/venv/bin/python")
 
-      -- ── C / C++ via codelldb ────────────────────────────────────────────────
+      -- ── C / C++ ─────────────────────────────────────────────────────────────
+      -- Two adapters, because the two machines need different ones:
+      --   • codelldb (LLDB) — local debugging on this macOS arm64 box; gdb has no
+      --     working native arm64-Darwin build, so LLDB is the only local option.
+      --   • cppdbg (cpptools) — drives gdb over GDB/MI on Linux/RHEL, works with any
+      --     gdb version (even ones predating gdb's native DAP) and attaches to a
+      --     remote gdbserver. Config schema matches VSCode launch.json (loaded below).
+      -- Registering both is conflict-free; <F5> just lists every config in a picker.
       dap.adapters.codelldb = {
         type = "server",
         port = "${port}",
@@ -73,14 +80,36 @@ return {
         },
       }
 
-      local cpp_launch = {
+      dap.adapters.cppdbg = {
+        id = "cppdbg",
+        type = "executable",
+        command = vim.fn.stdpath("data")
+          .. "/mason/packages/cpptools/extension/debugAdapters/bin/OpenDebugAD7",
+      }
+
+      -- Resolve which gdb binary to use, so each project can pin its own version:
+      --   • vim.g.gdb_path  — set in a project-local .nvim.lua or :let g:gdb_path = "…"
+      --   • $GDB            — environment variable
+      --   • "gdb"           — from $PATH (fallback)
+      local function gdb_path()
+        return vim.g.gdb_path or vim.env.GDB or "gdb"
+      end
+
+      local function pick_executable()
+        return vim.fn.input("Executable: ", vim.fn.getcwd() .. "/", "file")
+      end
+
+      local pretty = {
+        { text = "-enable-pretty-printing", description = "enable pretty printing", ignoreFailures = false },
+      }
+
+      -- LLDB configs (local macOS debugging)
+      local lldb_cfgs = {
         {
           name = "Launch (codelldb)",
           type = "codelldb",
           request = "launch",
-          program = function()
-            return vim.fn.input("Executable: ", vim.fn.getcwd() .. "/", "file")
-          end,
+          program = pick_executable,
           cwd = "${workspaceFolder}",
           stopOnEntry = false,
           args = {},
@@ -93,8 +122,64 @@ return {
           args = {},
         },
       }
+
+      -- gdb configs (Linux/RHEL local + remote gdbserver)
+      local gdb_cfgs = {
+        {
+          name = "Launch (gdb)",
+          type = "cppdbg",
+          request = "launch",
+          program = pick_executable,
+          cwd = "${workspaceFolder}",
+          stopAtEntry = false,
+          MIMode = "gdb",
+          miDebuggerPath = gdb_path,
+          setupCommands = pretty,
+        },
+        {
+          name = "Attach (gdb)",
+          type = "cppdbg",
+          request = "attach",
+          program = pick_executable,
+          processId = require("dap.utils").pick_process,
+          MIMode = "gdb",
+          miDebuggerPath = gdb_path,
+          setupCommands = pretty,
+        },
+        {
+          name = "Remote (gdbserver)",
+          type = "cppdbg",
+          request = "launch",
+          program = pick_executable,
+          cwd = "${workspaceFolder}",
+          MIMode = "gdb",
+          miDebuggerPath = gdb_path,
+          miDebuggerServerAddress = function()
+            return vim.fn.input("gdbserver address: ", "localhost:1234")
+          end,
+          setupCommands = pretty,
+        },
+      }
+
+      -- List the platform-appropriate adapter first so the default pick is usable:
+      -- LLDB on this Mac, gdb on Linux/RHEL. (All configs stay available on both.)
+      local cpp_launch
+      if vim.fn.has("mac") == 1 then
+        cpp_launch = vim.list_extend(vim.deepcopy(lldb_cfgs), gdb_cfgs)
+      else
+        cpp_launch = vim.list_extend(vim.deepcopy(gdb_cfgs), lldb_cfgs)
+      end
       dap.configurations.c   = cpp_launch
       dap.configurations.cpp = cpp_launch
+
+      -- Per-project overrides from .vscode/launch.json (type → filetypes).
+      -- Lets a project pin miDebuggerPath, args, gdbserver address, etc.
+      pcall(function()
+        require("dap.ext.vscode").load_launchjs(nil, {
+          cppdbg   = { "c", "cpp" },
+          codelldb = { "c", "cpp" },
+        })
+      end)
 
       -- ── JavaScript / TypeScript via js-debug-adapter ────────────────────────
       dap.adapters["pwa-node"] = {

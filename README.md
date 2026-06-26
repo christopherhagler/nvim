@@ -81,9 +81,10 @@ lua/
     lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, nvim-cmp, snippets
     formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt)
     linting.lua             # nvim-lint (flake8, eslint_d, shellcheck)
-    dap.lua                 # nvim-dap + UI, codelldb (C/C++), debugpy (Python)
+    dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python)
     git.lua                 # vim-fugitive, gitsigns
     terminal.lua            # toggleterm
+    ai.lua                  # claudecode.nvim (Claude Code editor integration)
 after/ftplugin/             # Per-language indentation settings
   asm.lua, c.lua, cpp.lua, python.lua, javascript.lua, typescript.lua, sh.lua
 ```
@@ -140,6 +141,8 @@ Leader key: `,`
 | `<leader>re` | Refactor |
 | `<leader>lc` | CodeLens action |
 | `<leader>lf` | Format buffer (manual; via conform) |
+| `<leader>li` | Toggle inlay hints |
+| `<leader>lh` | Switch source/header (C/C++, clangd) |
 | `<leader>e` | Show line diagnostics |
 | `<leader>xf` | Send diagnostics to location list |
 | `[g` / `]g` | Prev / next diagnostic |
@@ -160,6 +163,20 @@ VSCode-style function keys for stepping, plus leader mappings for the rest.
 | `<leader>du` | Toggle DAP UI |
 | `<leader>dr` | Debug REPL |
 | `<leader>dl` | Run last |
+
+### Claude (claudecode.nvim)
+
+Connects the local `claude` CLI to Neovim with the same protocol as the official
+VS Code extension: selection/file context, diagnostics, and native diff review.
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>cc` | Toggle Claude terminal |
+| `<leader>cf` | Focus Claude |
+| `<leader>cm` | Select model |
+| `<leader>cb` | Add current file to context |
+| `<leader>cs` | Send selection to Claude (visual) |
+| `<leader>ca` / `<leader>cr` | Accept / reject proposed diff |
 
 ### Diagnostics (Trouble)
 
@@ -244,7 +261,9 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `mfussenegger/nvim-dap` | Debug adapter protocol |
 | `rcarriga/nvim-dap-ui` | Debug UI |
 | `mfussenegger/nvim-dap-python` | Python debug adapter (debugpy) |
+| `codelldb` / `cpptools` (Mason) | C/C++ debug adapters — LLDB (local macOS) and gdb/gdbserver (Linux) |
 | `js-debug-adapter` (Mason) | JavaScript / TypeScript debug adapter |
 | `tpope/vim-fugitive` | Git commands |
 | `lewis6991/gitsigns.nvim` | Git gutter signs and hunk actions |
 | `akinsho/toggleterm.nvim` | Floating terminal |
+| `coder/claudecode.nvim` | Claude Code editor integration (selection context, native diffs) |

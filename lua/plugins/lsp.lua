@@ -25,6 +25,7 @@ return {
       "saadparwaiz1/cmp_luasnip",
       "rafamadriz/friendly-snippets",
       "onsails/lspkind.nvim",
+      "windwp/nvim-autopairs",
     },
     config = function()
       local cmp      = require("cmp")
@@ -80,6 +81,10 @@ return {
           }),
         },
       })
+
+      -- Auto-insert () after accepting a function/method completion
+      local cmp_autopairs = require("nvim-autopairs.completion.cmp")
+      cmp.event:on("confirm_done", cmp_autopairs.on_confirm_done())
 
       cmp.setup.cmdline({ "/", "?" }, {
         mapping = cmp.mapping.preset.cmdline(),
@@ -161,6 +166,32 @@ return {
         map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
         map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to quickfix")
 
+        -- Inlay hints (inline parameter names / inferred types), on by default
+        if client:supports_method("textDocument/inlayHint") then
+          vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+          map("<leader>li", function()
+            vim.lsp.inlay_hint.enable(
+              not vim.lsp.inlay_hint.is_enabled({ bufnr = bufnr }),
+              { bufnr = bufnr }
+            )
+          end, "Toggle inlay hints")
+        end
+
+        -- C/C++: jump between source and header (clangd extension)
+        if client.name == "clangd" then
+          map("<leader>lh", function()
+            client:request("textDocument/switchSourceHeader",
+              { uri = vim.uri_from_bufnr(bufnr) },
+              function(err, result)
+                if err or not result then
+                  vim.notify("No matching source/header file", vim.log.levels.WARN)
+                  return
+                end
+                vim.cmd.edit(vim.uri_to_fname(result))
+              end, bufnr)
+          end, "Switch source/header")
+        end
+
         -- CodeLens refresh (namespaced augroup prevents stacking on re-attach)
         if client:supports_method("textDocument/codeLens") then
           vim.lsp.codelens.refresh()
@@ -197,6 +228,11 @@ return {
               typeCheckingMode       = "basic",
               autoSearchPaths        = true,
               useLibraryCodeForTypes = true,
+              inlayHints = {
+                variableTypes        = true,
+                functionReturnTypes  = true,
+                callArgumentNames    = true,
+              },
             },
           },
         },

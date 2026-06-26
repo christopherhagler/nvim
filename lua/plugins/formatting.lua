@@ -56,7 +56,7 @@ return {
         -- Linters
         "flake8", "eslint_d", "shellcheck",
         -- Debug adapters
-        "codelldb", "debugpy", "js-debug-adapter",
+        "codelldb", "cpptools", "debugpy", "js-debug-adapter",
       },
       auto_update = false,
       run_on_start = true,

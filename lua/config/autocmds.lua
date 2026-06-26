@@ -1,11 +1,13 @@
 local augroup = vim.api.nvim_create_augroup
 local autocmd = vim.api.nvim_create_autocmd
 
--- Trim trailing whitespace on save
+-- Trim trailing whitespace on save (skip markdown: trailing spaces are
+-- meaningful hard line breaks there)
 autocmd("BufWritePre", {
   group = augroup("trim_whitespace", { clear = true }),
   pattern = "*",
   callback = function()
+    if vim.bo.filetype == "markdown" then return end
     local pos = vim.fn.getpos(".")
     vim.cmd([[%s/\s\+$//e]])
     vim.fn.setpos(".", pos)

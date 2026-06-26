@@ -91,6 +91,7 @@ check_optional_deps() {
     "node:Node.js (TS/JS LSP, prettier)"
     "python3:Python 3 (pyright, debugpy)"
     "clang:clang (C/C++ compiler)"
+    "gdb:gdb (C/C++ debugging via cpptools; needed on Linux/RHEL, not on macOS)"
   )
   local any_missing=0
   for item in "${items[@]}"; do
@@ -258,7 +259,7 @@ cmd_health() {
   local tools=(
     "git:git" "rg:ripgrep" "make:make"
     "node:Node.js" "python3:Python 3"
-    "clang:clang"
+    "clang:clang" "gdb:gdb"
   )
   for entry in "${tools[@]}"; do
     local cmd="${entry%%:*}" label="${entry##*:}"
