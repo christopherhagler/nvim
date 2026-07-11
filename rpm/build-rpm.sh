@@ -97,13 +97,31 @@ preflight() {
 
 # ── Fetch / build components ───────────────────────────────────────────────────
 fetch_tree_sitter_cli() {
-  info "Fetching tree-sitter CLI $TS_CLI_VERSION (build-time only)..."
   mkdir -p "$TOOLS"
-  curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/v${TS_CLI_VERSION}/tree-sitter-linux-x64.gz" \
-    | gunzip > "$TOOLS/tree-sitter"
-  chmod +x "$TOOLS/tree-sitter"
   # python3 shim so Mason's debugpy venv is built with $PYTHON_BIN
   ln -sf "$(command -v "$PYTHON_BIN")" "$TOOLS/python3"
+
+  if [ -x "$TOOLS/tree-sitter" ] && "$TOOLS/tree-sitter" --version >/dev/null 2>&1; then
+    ok "tree-sitter CLI cached: $("$TOOLS/tree-sitter" --version)"
+    return
+  fi
+
+  # The prebuilt GitHub release binaries link glibc 2.29+ and cannot run on
+  # EL8 (glibc 2.28) — build the CLI from source. Rust comes from rustup, not
+  # dnf: v0.26.x needs Rust >= 1.84, newer than EL8's packaged toolchain.
+  # Everything stays under $WORK; nothing touches the host toolchain.
+  info "Building tree-sitter CLI $TS_CLI_VERSION from source (build-time only; prebuilts need newer glibc)..."
+  export RUSTUP_HOME="$WORK/rustup" CARGO_HOME="$WORK/cargo"
+  if [ ! -x "$CARGO_HOME/bin/cargo" ]; then
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path \
+      || die "rustup install failed"
+  fi
+  "$CARGO_HOME/bin/cargo" install --locked tree-sitter-cli \
+    --version "$TS_CLI_VERSION" --root "$WORK/cargo" \
+    || die "cargo install tree-sitter-cli $TS_CLI_VERSION failed"
+  cp "$WORK/cargo/bin/tree-sitter" "$TOOLS/tree-sitter"
+  "$TOOLS/tree-sitter" --version >/dev/null || die "built tree-sitter CLI does not run"
   ok "tree-sitter CLI: $("$TOOLS/tree-sitter" --version)"
 }
 
@@ -126,6 +144,7 @@ fetch_runtimes() {
     mkdir -p "$ROOT$PREFIX/node"
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
       | tar -xJ -C "$ROOT$PREFIX/node" --strip-components=1
+    "$ROOT$PREFIX/node/bin/node" --version >/dev/null || die "bundled node does not run on this host"
     ok "Node.js: $("$ROOT$PREFIX/node/bin/node" --version)"
   fi
 
@@ -134,6 +153,7 @@ fetch_runtimes() {
     mkdir -p "$ROOT$PREFIX/bin"
     curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
       | tar -xz -C "$ROOT$PREFIX/bin" --strip-components=1 --wildcards '*/rg'
+    "$ROOT$PREFIX/bin/rg" --version >/dev/null || die "bundled ripgrep does not run on this host"
     ok "ripgrep: $("$ROOT$PREFIX/bin/rg" --version | head -1)"
   fi
 
