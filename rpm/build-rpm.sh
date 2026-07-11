@@ -305,7 +305,8 @@ build_rpm() {
   local version
   version=$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null | tr '-' '.' || true)
   [ -n "$version" ] || version=$(date +%Y.%m.%d)
-  # RPM versions must start with a digit
+  version="${version#v}" # tag v1.0.0 → rpm version 1.0.0
+  # RPM versions must start with a digit (e.g. bare commit-hash fallbacks)
   case "$version" in [0-9]*) ;; *) version="0.$version" ;; esac
 
   info "Building RPM (version $version)..."
