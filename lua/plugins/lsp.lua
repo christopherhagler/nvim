@@ -1,7 +1,7 @@
 return {
   -- Mason: installs and manages LSP servers
   {
-    "williamboman/mason.nvim",
+    "mason-org/mason.nvim",
     cmd = "Mason",
     build = ":MasonUpdate",
     opts = {
@@ -12,104 +12,61 @@ return {
     },
   },
 
-  -- Completion engine
+  -- Completion engine (Rust fuzzy matcher; built-in snippets, cmdline, auto-brackets)
   {
-    "hrsh7th/nvim-cmp",
-    event = "InsertEnter",
-    dependencies = {
-      "hrsh7th/cmp-nvim-lsp",
-      "hrsh7th/cmp-buffer",
-      "hrsh7th/cmp-path",
-      "hrsh7th/cmp-cmdline",
-      { "L3MON4D3/LuaSnip", build = "make install_jsregexp" },
-      "saadparwaiz1/cmp_luasnip",
-      "rafamadriz/friendly-snippets",
-      "onsails/lspkind.nvim",
-      "windwp/nvim-autopairs",
+    "saghen/blink.cmp",
+    event = { "InsertEnter", "CmdlineEnter" },
+    version = "1.*",
+    dependencies = { "rafamadriz/friendly-snippets" },
+    opts = {
+      keymap = {
+        -- 'enter' preset: <CR> accept, <C-space> show/toggle docs, <C-e> hide,
+        -- <C-b>/<C-f> scroll docs
+        preset = "enter",
+        ["<Tab>"]   = { "select_next", "snippet_forward", "fallback" },
+        ["<S-Tab>"] = { "select_prev", "snippet_backward", "fallback" },
+      },
+      completion = {
+        -- Don't preselect: <CR> only accepts after an explicit <Tab> selection
+        list = { selection = { preselect = false, auto_insert = true } },
+        menu = { border = "rounded" },
+        documentation = { auto_show = true, window = { border = "rounded" } },
+        -- Auto-insert () after accepting a function/method completion
+        accept = { auto_brackets = { enabled = true } },
+      },
+      signature = { enabled = true, window = { border = "rounded" } },
+      sources = {
+        default = { "lazydev", "lsp", "path", "snippets", "buffer" },
+        providers = {
+          lazydev = {
+            name = "LazyDev",
+            module = "lazydev.integrations.blink",
+            score_offset = 100,
+          },
+        },
+      },
+      fuzzy = { implementation = "prefer_rust_with_warning" },
     },
-    config = function()
-      local cmp      = require("cmp")
-      local luasnip  = require("luasnip")
-      local lspkind  = require("lspkind")
-
-      require("luasnip.loaders.from_vscode").lazy_load()
-
-      cmp.setup({
-        snippet = {
-          expand = function(args) luasnip.lsp_expand(args.body) end,
-        },
-        window = {
-          completion    = cmp.config.window.bordered(),
-          documentation = cmp.config.window.bordered(),
-        },
-        mapping = cmp.mapping.preset.insert({
-          ["<Tab>"] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_next_item()
-            elseif luasnip.expand_or_locally_jumpable() then
-              luasnip.expand_or_jump()
-            else
-              fallback()
-            end
-          end, { "i", "s" }),
-          ["<S-Tab>"] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_prev_item()
-            elseif luasnip.locally_jumpable(-1) then
-              luasnip.jump(-1)
-            else
-              fallback()
-            end
-          end, { "i", "s" }),
-          ["<C-b>"]     = cmp.mapping.scroll_docs(-4),
-          ["<C-f>"]     = cmp.mapping.scroll_docs(4),
-          ["<C-Space>"] = cmp.mapping.complete(),
-          ["<C-e>"]     = cmp.mapping.abort(),
-          ["<CR>"]      = cmp.mapping.confirm({ select = false }),
-        }),
-        sources = cmp.config.sources({
-          { name = "nvim_lsp", priority = 1000 },
-          { name = "luasnip",  priority = 750 },
-          { name = "buffer",   priority = 500 },
-          { name = "path",     priority = 250 },
-        }),
-        formatting = {
-          format = lspkind.cmp_format({
-            mode         = "symbol_text",
-            maxwidth     = 50,
-            ellipsis_char = "...",
-          }),
-        },
-      })
-
-      -- Auto-insert () after accepting a function/method completion
-      local cmp_autopairs = require("nvim-autopairs.completion.cmp")
-      cmp.event:on("confirm_done", cmp_autopairs.on_confirm_done())
-
-      cmp.setup.cmdline({ "/", "?" }, {
-        mapping = cmp.mapping.preset.cmdline(),
-        sources = { { name = "buffer" } },
-      })
-      cmp.setup.cmdline(":", {
-        mapping = cmp.mapping.preset.cmdline(),
-        sources = cmp.config.sources({ { name = "path" }, { name = "cmdline" } }),
-        matching = { disallow_symbol_nonprefix_matching = false },
-      })
-    end,
   },
 
-  -- LSP: installation + native Neovim 0.11+ configuration (no nvim-lspconfig needed)
+  -- LSP: installation + native Neovim 0.11+ configuration.
+  -- nvim-lspconfig is data-only here: it ships the lsp/<server>.lua base configs
+  -- (cmd, filetypes, root markers) that vim.lsp.config/vim.lsp.enable build on.
   {
-    "williamboman/mason-lspconfig.nvim",
+    "mason-org/mason-lspconfig.nvim",
     event = { "BufReadPre", "BufNewFile" },
     dependencies = {
-      "williamboman/mason.nvim",
-      "hrsh7th/cmp-nvim-lsp",
+      "mason-org/mason.nvim",
+      "neovim/nvim-lspconfig",
+      "saghen/blink.cmp",
+      { "b0o/schemastore.nvim", lazy = true },
       { "j-hui/fidget.nvim",  opts = {} },
       { "folke/lazydev.nvim", ft = "lua", opts = {} },
     },
     config = function()
       -- Install servers
+      -- NOTE: mirrored (as mason package names) in rpm/build-rpm.sh for the
+      -- offline RPM; the build script fails if the counts drift.
       require("mason-lspconfig").setup({
         ensure_installed = {
           "clangd",   -- C/C++
@@ -126,18 +83,19 @@ return {
       -- Diagnostic appearance
       vim.diagnostic.config({
         virtual_text    = { prefix = "●" },
-        signs           = true,
+        signs           = {
+          text = {
+            [vim.diagnostic.severity.ERROR] = " ",
+            [vim.diagnostic.severity.WARN]  = " ",
+            [vim.diagnostic.severity.HINT]  = " ",
+            [vim.diagnostic.severity.INFO]  = " ",
+          },
+        },
         update_in_insert = false,
         underline       = true,
         severity_sort   = true,
-        float           = { border = "rounded", source = "always" },
+        float           = { border = "rounded", source = true },
       })
-
-      local signs = { Error = " ", Warn = " ", Hint = " ", Info = " " }
-      for type, icon in pairs(signs) do
-        local hl = "DiagnosticSign" .. type
-        vim.fn.sign_define(hl, { text = icon, texthl = hl, numhl = "" })
-      end
 
       local on_attach = function(client, bufnr)
         local map = function(keys, func, desc)
@@ -164,7 +122,7 @@ return {
         -- Diagnostics
         map("[g",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
         map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
-        map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to quickfix")
+        map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to location list")
 
         -- Inlay hints (inline parameter names / inferred types), on by default
         if client:supports_method("textDocument/inlayHint") then
@@ -192,20 +150,15 @@ return {
           end, "Switch source/header")
         end
 
-        -- CodeLens refresh (namespaced augroup prevents stacking on re-attach)
+        -- CodeLens: managed capability on 0.12+ (refreshes itself on changes)
         if client:supports_method("textDocument/codeLens") then
-          vim.lsp.codelens.refresh()
-          vim.api.nvim_create_autocmd({ "BufEnter", "InsertLeave" }, {
-            group    = vim.api.nvim_create_augroup("lsp_codelens_" .. bufnr, { clear = true }),
-            buffer   = bufnr,
-            callback = vim.lsp.codelens.refresh,
-          })
+          vim.lsp.codelens.enable(true, { bufnr = bufnr })
         end
       end
 
       -- Global defaults applied to every LSP server
       vim.lsp.config("*", {
-        capabilities = require("cmp_nvim_lsp").default_capabilities(),
+        capabilities = require("blink.cmp").get_lsp_capabilities(),
         on_attach    = on_attach,
       })
 
@@ -238,6 +191,17 @@ return {
         },
       })
 
+      -- JSON validation/completion from the SchemaStore catalog
+      -- (package.json, tsconfig.json, GitHub Actions, etc.)
+      vim.lsp.config("jsonls", {
+        settings = {
+          json = {
+            schemas  = require("schemastore").json.schemas(),
+            validate = { enable = true },
+          },
+        },
+      })
+
       vim.lsp.config("lua_ls", {
         settings = {
           Lua = {
@@ -247,8 +211,6 @@ return {
           },
         },
       })
-
-
     end,
   },
 }

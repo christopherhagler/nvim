@@ -172,14 +172,9 @@ return {
       dap.configurations.c   = cpp_launch
       dap.configurations.cpp = cpp_launch
 
-      -- Per-project overrides from .vscode/launch.json (type → filetypes).
-      -- Lets a project pin miDebuggerPath, args, gdbserver address, etc.
-      pcall(function()
-        require("dap.ext.vscode").load_launchjs(nil, {
-          cppdbg   = { "c", "cpp" },
-          codelldb = { "c", "cpp" },
-        })
-      end)
+      -- Per-project overrides (miDebuggerPath, args, gdbserver address, …) come
+      -- from .vscode/launch.json, which nvim-dap reads automatically on demand
+      -- (:help dap-providers-configs).
 
       -- ── JavaScript / TypeScript via js-debug-adapter ────────────────────────
       dap.adapters["pwa-node"] = {
@@ -213,6 +208,53 @@ return {
       }
       dap.configurations.javascript = js_launch
       dap.configurations.typescript = js_launch
+
+      -- ── Bash via bash-debug-adapter (bashdb) ────────────────────────────────
+      -- bashdb needs bash >= 4 to run the debugged script; macOS /bin/bash is
+      -- stuck at 3.2, so prefer Homebrew's bash when present.
+      local function debug_bash()
+        for _, p in ipairs({ "/opt/homebrew/bin/bash", "/usr/local/bin/bash" }) do
+          if vim.fn.executable(p) == 1 then return p end
+        end
+        return "bash"
+      end
+
+      local bashdb_dir = vim.fn.stdpath("data")
+        .. "/mason/packages/bash-debug-adapter/extension/bashdb_dir"
+
+      dap.adapters.bashdb = {
+        type = "executable",
+        command = vim.fn.stdpath("data") .. "/mason/bin/bash-debug-adapter",
+        name = "bashdb",
+      }
+
+      local function bash_config(name, args)
+        return {
+          type = "bashdb",
+          request = "launch",
+          name = name,
+          program = "${file}",
+          file = "${file}",
+          cwd = "${workspaceFolder}",
+          pathBashdb = bashdb_dir .. "/bashdb",
+          pathBashdbLib = bashdb_dir,
+          pathBash = debug_bash(),
+          pathCat = "cat",
+          pathMkfifo = "mkfifo",
+          pathPkill = "pkill",
+          env = {},
+          args = args,
+          showDebugOutput = true,
+        }
+      end
+
+      dap.configurations.sh = {
+        bash_config("Launch current script", {}),
+        bash_config("Launch with arguments", function()
+          return vim.split(vim.fn.input("Script arguments: "), " +", { trimempty = true })
+        end),
+      }
+      dap.configurations.bash = dap.configurations.sh
     end,
   },
 }

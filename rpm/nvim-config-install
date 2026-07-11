@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# nvim-config-install — activate the bundled Neovim setup for the current user.
+#
+# Copies the offline payload (installed by the nvim-config RPM under
+# /opt/nvim-config) into this user's home. Safe to re-run: it backs up an
+# existing config and resets the plugin/tool directories to the packaged state.
+set -euo pipefail
+
+PREFIX="${NVIM_CONFIG_PREFIX:-/opt/nvim-config}"
+CONFIG_SRC="$PREFIX/home/config/nvim"
+DATA_SRC="$PREFIX/home/data/nvim"
+CONFIG_DST="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
+DATA_DST="${XDG_DATA_HOME:-$HOME/.local/share}/nvim"
+
+if [ ! -d "$CONFIG_SRC" ] || [ ! -d "$DATA_SRC" ]; then
+  echo "error: payload not found under $PREFIX — is the nvim-config RPM installed?" >&2
+  exit 1
+fi
+
+if [ -d "$CONFIG_DST" ]; then
+  backup="${CONFIG_DST}.bak.$(date +%Y%m%d_%H%M%S)"
+  echo "[info] backing up existing config: $CONFIG_DST -> $backup"
+  mv "$CONFIG_DST" "$backup"
+fi
+
+mkdir -p "$(dirname "$CONFIG_DST")" "$DATA_DST"
+cp -a "$CONFIG_SRC" "$CONFIG_DST"
+
+# Reset packaged subtrees; leave user-owned state (undo history, sessions,
+# telescope history, …) untouched.
+for d in lazy mason site; do
+  rm -rf "${DATA_DST:?}/$d"
+  cp -a "$DATA_SRC/$d" "$DATA_DST/$d"
+done
+
+echo "[ ok ] Neovim setup activated for $USER"
+echo ""
+echo "Next steps:"
+echo "  - Start a login shell (or 'source /etc/profile.d/nvim-config.sh') so"
+echo "    nvim, node, and rg from $PREFIX/bin are on your PATH"
+echo "  - Run: nvim"

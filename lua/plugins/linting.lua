@@ -5,14 +5,15 @@ return {
     config = function()
       local lint = require("lint")
 
-      -- C/C++ diagnostics come from clangd; no separate linter needed
+      -- C/C++ diagnostics come from clangd; no separate linter needed.
+      -- Shell diagnostics come from bashls, which runs shellcheck itself
+      -- (with quick-fix code actions) — running it here again would duplicate.
       lint.linters_by_ft = {
-        python          = { "flake8" },
+        python          = { "ruff" },
         javascript      = { "eslint_d" },
         typescript      = { "eslint_d" },
         javascriptreact = { "eslint_d" },
         typescriptreact = { "eslint_d" },
-        sh              = { "shellcheck" },
       }
 
       vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "InsertLeave" }, {

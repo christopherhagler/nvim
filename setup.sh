@@ -45,7 +45,7 @@ banner() {
   ██║ ╚████║ ╚████╔╝ ██║██║ ╚═╝ ██║
   ╚═╝  ╚═══╝  ╚═══╝  ╚═╝╚═╝     ╚═╝
 EOF
-  echo -e "${RESET}${DIM}  C/C++ · Python · Web  —  lazy.nvim + native LSP${RESET}"
+  echo -e "${RESET}${DIM}  C/C++ · Python · Bash · Web  —  lazy.nvim + native LSP${RESET}"
   echo ""
 }
 
@@ -64,6 +64,21 @@ ask() {
 # ── Helpers ────────────────────────────────────────────────────────────────────
 version_gte() { printf '%s\n%s\n' "$2" "$1" | sort -V -C; }
 nvim_version() { nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; }
+
+# bashdb (bash script debugging) needs bash >= 4; macOS /bin/bash is 3.2.
+# Prints the path of the first modern bash found, or nothing.
+find_bash4() {
+  local candidate major
+  for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash bash; do
+    command -v "$candidate" &>/dev/null || continue
+    major=$("$candidate" -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null)
+    if [ "${major:-0}" -ge 4 ]; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
 
 check_required_deps() {
   local failed=0
@@ -90,9 +105,12 @@ check_optional_deps() {
     "make:make (telescope-fzf-native build)"
     "node:Node.js (TS/JS LSP, prettier)"
     "python3:Python 3 (pyright, debugpy)"
-    "clang:clang (C/C++ compiler)"
-    "gdb:gdb (C/C++ debugging via cpptools; needed on Linux/RHEL, not on macOS)"
+    "tree-sitter:tree-sitter CLI >= 0.26 (nvim-treesitter parser installs)"
+    "unzip:unzip (Mason package extraction)"
   )
+  # gdb drives C/C++ debugging on Linux only; macOS uses codelldb
+  [ "$(uname -s)" = "Linux" ] && items+=("gdb:gdb (C/C++ debugging via cpptools)")
+
   local any_missing=0
   for item in "${items[@]}"; do
     local cmd="${item%%:*}" label="${item##*:}"
@@ -101,6 +119,26 @@ check_optional_deps() {
       any_missing=1
     fi
   done
+
+  # Any C compiler works: gcc on RHEL/Rocky, clang on macOS
+  if ! command -v cc &>/dev/null && ! command -v gcc &>/dev/null && ! command -v clang &>/dev/null; then
+    warn "  missing: C compiler (gcc or clang — treesitter parsers, fzf-native build)"
+    any_missing=1
+  fi
+
+  # 'clipboard=unnamedplus' needs a system clipboard tool on Linux
+  if [ "$(uname -s)" = "Linux" ]; then
+    if ! command -v xclip &>/dev/null && ! command -v xsel &>/dev/null && ! command -v wl-copy &>/dev/null; then
+      warn "  missing: clipboard tool (xclip, xsel, or wl-clipboard)"
+      any_missing=1
+    fi
+  fi
+
+  if ! find_bash4 >/dev/null; then
+    warn "  missing: bash >= 4 (bash script debugging via bashdb; macOS: brew install bash)"
+    any_missing=1
+  fi
+
   return $any_missing
 }
 
@@ -259,8 +297,10 @@ cmd_health() {
   local tools=(
     "git:git" "rg:ripgrep" "make:make"
     "node:Node.js" "python3:Python 3"
-    "clang:clang" "gdb:gdb"
+    "tree-sitter:tree-sitter CLI" "unzip:unzip"
   )
+  [ "$(uname -s)" = "Linux" ] && tools+=("gdb:gdb")
+
   for entry in "${tools[@]}"; do
     local cmd="${entry%%:*}" label="${entry##*:}"
     if command -v "$cmd" &>/dev/null; then
@@ -270,6 +310,34 @@ cmd_health() {
       warn "  ${label} — not found"
     fi
   done
+
+  local compiler
+  for compiler in clang gcc cc; do
+    if command -v "$compiler" &>/dev/null; then
+      local cver; cver=$("$compiler" --version 2>/dev/null | head -1)
+      ok "  C compiler: ${cver:-$compiler}"
+      break
+    fi
+    compiler=""
+  done
+  [ -n "$compiler" ] || warn "  C compiler — not found (gcc or clang)"
+
+  if [ "$(uname -s)" = "Linux" ]; then
+    local clip
+    for clip in xclip xsel wl-copy; do
+      command -v "$clip" &>/dev/null && { ok "  clipboard: $clip"; break; }
+      clip=""
+    done
+    [ -n "$clip" ] || warn "  clipboard tool — not found (xclip, xsel, or wl-clipboard)"
+  fi
+
+  local bash4
+  if bash4=$(find_bash4); then
+    local bash4_ver; bash4_ver=$("$bash4" --version 2>/dev/null | head -1 | grep -oE '[0-9][0-9.]+' | head -1)
+    ok "  bash >= 4 for bashdb (${bash4_ver} at ${bash4})"
+  else
+    warn "  bash >= 4 — not found; bash debugging needs it (macOS: brew install bash)"
+  fi
   echo ""
   info "clangd, formatters, linters, and debug adapters are managed by Mason —"
   info "verify those with :Mason or :checkhealth (checked below)."
@@ -368,6 +436,9 @@ usage() {
   printf "  ${GREEN}%-10s${RESET} %s\n" "health"  "Check tool availability and run :checkhealth"
   printf "  ${GREEN}%-10s${RESET} %s\n" "backup"  "Snapshot current config to a timestamped backup"
   printf "  ${GREEN}%-10s${RESET} %s\n" "restore" "Restore a previous backup"
+  echo ""
+  echo -e "${BOLD}Air-gapped systems:${RESET} this script needs internet. Build an offline"
+  echo "RPM instead with rpm/build-rpm.sh — see the README's air-gapped section."
   echo ""
   echo -e "${BOLD}Repo:${RESET} $REPO_URL"
 }

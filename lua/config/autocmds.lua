@@ -7,10 +7,24 @@ autocmd("BufWritePre", {
   group = augroup("trim_whitespace", { clear = true }),
   pattern = "*",
   callback = function()
-    if vim.bo.filetype == "markdown" then return end
-    local pos = vim.fn.getpos(".")
+    if vim.bo.filetype == "markdown" or not vim.bo.modifiable then return end
+    local view = vim.fn.winsaveview()
     vim.cmd([[%s/\s\+$//e]])
-    vim.fn.setpos(".", pos)
+    vim.fn.winrestview(view)
+  end,
+})
+
+-- Reload buffers changed outside Neovim (e.g. by Claude Code or git)
+autocmd({ "FocusGained", "BufEnter", "TermLeave" }, {
+  group = augroup("checktime", { clear = true }),
+  callback = function()
+    if vim.o.buftype == "" then vim.cmd("checktime") end
+  end,
+})
+autocmd("FileChangedShellPost", {
+  group = augroup("file_reloaded", { clear = true }),
+  callback = function()
+    vim.notify("File changed on disk, buffer reloaded", vim.log.levels.INFO)
   end,
 })
 

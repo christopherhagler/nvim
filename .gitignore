@@ -44,3 +44,7 @@ luac.out
 tags
 
 *.DS_Store
+
+# Offline RPM build artifacts
+rpm/work/
+dist/

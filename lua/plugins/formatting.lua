@@ -48,18 +48,23 @@ return {
   -- Auto-install formatters and linters via Mason
   {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
-    dependencies = { "williamboman/mason.nvim" },
+    event = "VeryLazy",
+    dependencies = { "mason-org/mason.nvim" },
     opts = {
+      -- NOTE: mirrored in rpm/build-rpm.sh for the offline RPM; the build
+      -- script fails if the counts drift.
       ensure_installed = {
         -- Formatters
         "black", "isort", "prettier", "stylua", "shfmt", "clang-format",
-        -- Linters
-        "flake8", "eslint_d", "shellcheck",
+        -- Linters (shellcheck is run by bashls, not nvim-lint)
+        "ruff", "eslint_d", "shellcheck",
         -- Debug adapters
-        "codelldb", "cpptools", "debugpy", "js-debug-adapter",
+        "codelldb", "cpptools", "debugpy", "js-debug-adapter", "bash-debug-adapter",
       },
       auto_update = false,
-      run_on_start = true,
+      -- Skip the startup install check on air-gapped systems (the offline RPM
+      -- sets NVIM_OFFLINE via /etc/profile.d; everything ships pre-installed)
+      run_on_start = not vim.env.NVIM_OFFLINE,
     },
   },
 }

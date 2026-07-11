@@ -1,11 +1,12 @@
 # Neovim Configuration
 
-A Lua-first Neovim setup targeting C/C++, Python, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, and `nvim-dap` for debugging.
+A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, and `nvim-dap` for debugging.
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Air-gapped install (RPM)](#air-gapped-install-rpm)
 - [File Structure](#file-structure)
 - [Key Mappings](#key-mappings)
 - [Formatting](#formatting)
@@ -25,9 +26,20 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 - **Git**
 - **ripgrep** — live grep in Telescope
 - **make** — required to build the telescope-fzf-native extension
-- **A C/C++ compiler** (clang recommended; clangd is installed automatically via Mason)
+- **A C compiler** — clang (macOS) or gcc (RHEL/Rocky); used for treesitter parsers and clangd projects
+- **tree-sitter CLI** >= 0.26 — required by nvim-treesitter (main branch) to install parsers; install via package manager or `cargo install tree-sitter-cli`, not npm
+- **unzip** — Mason package extraction (often missing on minimal RHEL/Rocky installs)
 - **Node.js** — for TypeScript/JavaScript LSP, prettier, and the JS debug adapter
 - **Python 3** — for pyright and debugpy
+- **bash >= 4** — for bash script debugging via bashdb (macOS ships 3.2: `brew install bash`)
+- **Linux only:** a clipboard tool (`xclip`, `xsel`, or `wl-clipboard`) for system-clipboard integration, and `gdb` for C/C++ debugging
+
+### Platform notes (macOS / RHEL 8 / Rocky 8)
+
+- **Neovim on RHEL 8 / Rocky 8**: official release binaries require glibc 2.31+, but EL8 ships 2.28 — build from source or use a compatible build.
+- **C/C++ debugging** picks the right adapter per platform automatically: codelldb (LLDB) on macOS, gdb via cpptools on Linux. Both stay available in the `<F5>` picker.
+- **blink.cmp** downloads a prebuilt Rust fuzzy matcher; if it's incompatible with the system (e.g. old glibc), it falls back to the Lua matcher with a warning — completion keeps working.
+- `setup.sh` (install/health) checks all of the above per platform.
 
 ## Installation
 
@@ -64,6 +76,61 @@ chmod +x setup.sh
 2. Open Neovim — `lazy.nvim` bootstraps and installs all plugins on first launch.
 3. Run `:Mason` to install LSP servers, formatters, linters, and debug adapters.
 
+## Air-gapped install (RPM)
+
+For systems with **no internet access** (air-gapped RHEL 8 / Rocky 8),
+`setup.sh` can't be used — it downloads plugins and Mason packages. Instead,
+build a self-contained RPM that bundles **everything**: Neovim (compiled
+against EL8 glibc), Node.js, ripgrep, this config, all plugins, compiled
+treesitter parsers, and every Mason tool (LSP servers, formatters, linters,
+debug adapters).
+
+### Build via GitHub Actions (easiest)
+
+The **Build offline RPM** workflow builds the artifact in a Rocky Linux 8
+container (matching RHEL 8's glibc) on GitHub's runners:
+
+- Manual: Actions tab → *Build offline RPM* → *Run workflow* → download the
+  `nvim-config-rpm` artifact when the run finishes (~30–60 min).
+- Release: push a version tag (`git tag v1.0.0 && git push --tags`) — the RPM
+  is built and attached to the GitHub Release automatically.
+
+### Build manually (on an internet-connected RHEL 8 / Rocky 8 x86_64 host)
+
+```bash
+git clone https://github.com/christopherhagler/nvim.git && cd nvim
+bash rpm/build-rpm.sh
+# → dist/nvim-config-<version>-1.el8.x86_64.rpm  (~1 GB)
+```
+
+The script installs its own build dependencies via dnf, builds Neovim from
+source, bakes all plugins/parsers/tools into the payload using a synthetic
+`$HOME`, and — before packaging — proves the result works with **zero
+network** by re-running it inside an empty network namespace (`unshare -rn`):
+clean boot, LSP attach on C/Python/bash buffers, treesitter, and DAP configs.
+
+Component versions (Neovim tag, Node.js, ripgrep, tree-sitter CLI, python for
+debugpy) are pinned at the top of `rpm/build-rpm.sh` and overridable via env.
+
+### Install (on the air-gapped target)
+
+```bash
+sudo dnf install ./nvim-config-<version>-1.el8.x86_64.rpm
+nvim-config-install   # once per user: copies config + plugins into $HOME
+exec bash -l          # pick up PATH (nvim, node, rg) from /etc/profile.d
+nvim
+```
+
+The RPM installs the payload read-only under `/opt/nvim-config` and declares
+only two dependencies: `git` and `python3.11` (for debugpy). `nvim-config-install`
+backs up any existing `~/.config/nvim` before activating, and is safe to
+re-run to reset to the packaged state. `/etc/profile.d/nvim-config.sh` also
+sets `NVIM_OFFLINE=1`, which tells the config to skip all startup install
+checks.
+
+To update: build a new RPM with a newer config, `sudo dnf upgrade` it on the
+target, and each user re-runs `nvim-config-install`.
+
 ## File Structure
 
 ```
@@ -75,18 +142,22 @@ lua/
     autocmds.lua            # Autocommands (whitespace trim, yank highlight, etc.)
   plugins/
     ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
-    editor.lua              # Treesitter, autopairs, Comment.nvim, surround
+    editor.lua              # Treesitter, autopairs, surround
     explorer.lua            # nvim-tree (file explorer), aerial (symbols outline)
     telescope.lua           # Fuzzy finder
-    lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, nvim-cmp, snippets
+    lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, blink.cmp, snippets
     formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt)
-    linting.lua             # nvim-lint (flake8, eslint_d, shellcheck)
-    dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python)
+    linting.lua             # nvim-lint (ruff, eslint_d); shell linting via bashls/shellcheck
+    dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python), bashdb (Bash)
     git.lua                 # vim-fugitive, gitsigns
     terminal.lua            # toggleterm
     ai.lua                  # claudecode.nvim (Claude Code editor integration)
 after/ftplugin/             # Per-language indentation settings
-  asm.lua, c.lua, cpp.lua, python.lua, javascript.lua, typescript.lua, sh.lua
+  asm.lua, javascript.lua, typescript.lua, sh.lua
+rpm/                        # Offline RPM build for air-gapped EL8 systems
+  build-rpm.sh              # One-command builder (run on a connected EL8 host)
+  nvim-config.spec          # RPM spec
+  nvim-config-install       # Per-user activation script (ships in the RPM)
 ```
 
 ## Key Mappings
@@ -102,7 +173,7 @@ Leader key: `,`
 | `<C-d>` / `<C-u>` | Scroll down / up (centered) |
 | `n` / `N` | Next / prev search result (centered) |
 | `<Esc>` | Clear search highlight |
-| `<leader>t` | Toggle floating terminal |
+| `<leader>t` | Toggle horizontal terminal |
 
 ### Navigation
 
@@ -150,6 +221,9 @@ Leader key: `,`
 ### Debugger (nvim-dap)
 
 VSCode-style function keys for stepping, plus leader mappings for the rest.
+The same keys drive every configured language: C/C++ (codelldb / gdb), Python
+(debugpy), JS/TS (js-debug), and Bash (bashdb). `<F5>` in a bash script offers
+"Launch current script" and "Launch with arguments".
 
 | Key | Action |
 | :--- | :--- |
@@ -246,24 +320,24 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `nvim-treesitter/nvim-treesitter` | Syntax highlighting and folding (C, C++, Python, JS, TS, ASM, …) |
 | `nvim-treesitter/nvim-treesitter-context` | Sticky function/class context |
 | `windwp/nvim-autopairs` | Auto-close brackets and quotes |
-| `numToStr/Comment.nvim` | `gcc` / `gc` commenting |
 | `RRethy/vim-illuminate` | Highlights all uses of the word under cursor |
 | `kylechui/nvim-surround` | Surround motions |
 | `nvim-tree/nvim-tree.lua` | File explorer |
 | `stevearc/aerial.nvim` | LSP-powered symbols outline |
 | `nvim-telescope/telescope.nvim` | Fuzzy finder |
-| `williamboman/mason.nvim` | LSP/tool installer |
-| `williamboman/mason-lspconfig.nvim` | Bridges Mason with native `vim.lsp` config (Neovim 0.11+) |
-| `hrsh7th/nvim-cmp` | Completion engine |
-| `L3MON4D3/LuaSnip` | Snippet engine |
+| `mason-org/mason.nvim` | LSP/tool installer |
+| `mason-org/mason-lspconfig.nvim` | Bridges Mason with native `vim.lsp` config (Neovim 0.11+) |
+| `saghen/blink.cmp` | Completion engine (built-in snippets, cmdline completion, auto-brackets) |
+| `b0o/schemastore.nvim` | JSON schema catalog for jsonls |
 | `stevearc/conform.nvim` | Formatting — clang-format (C/C++), prettier, black/isort, stylua, shfmt |
-| `mfussenegger/nvim-lint` | Linting (flake8, eslint_d, shellcheck) |
+| `mfussenegger/nvim-lint` | Linting (ruff, eslint_d); shellcheck runs inside bashls |
 | `mfussenegger/nvim-dap` | Debug adapter protocol |
 | `rcarriga/nvim-dap-ui` | Debug UI |
 | `mfussenegger/nvim-dap-python` | Python debug adapter (debugpy) |
 | `codelldb` / `cpptools` (Mason) | C/C++ debug adapters — LLDB (local macOS) and gdb/gdbserver (Linux) |
 | `js-debug-adapter` (Mason) | JavaScript / TypeScript debug adapter |
+| `bash-debug-adapter` (Mason) | Bash debug adapter (bashdb; needs bash >= 4) |
 | `tpope/vim-fugitive` | Git commands |
 | `lewis6991/gitsigns.nvim` | Git gutter signs and hunk actions |
-| `akinsho/toggleterm.nvim` | Floating terminal |
+| `akinsho/toggleterm.nvim` | Horizontal split terminal |
 | `coder/claudecode.nvim` | Claude Code editor integration (selection context, native diffs) |

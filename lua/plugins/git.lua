@@ -2,7 +2,7 @@ return {
   -- Full Git commands
   {
     "tpope/vim-fugitive",
-    cmd = { "Git", "G", "Gstatus", "Gdiff", "Gcommit", "Gpush" },
+    cmd = { "Git", "G", "Gdiffsplit", "Gvdiffsplit" },
     keys = {
       { "<leader>gs", "<cmd>Git<cr>",         desc = "Git status" },
       { "<leader>gc", "<cmd>Git commit<cr>",  desc = "Git commit" },
@@ -28,17 +28,17 @@ return {
           untracked    = { text = "┆" },
         },
         on_attach = function(bufnr)
-          local gs = package.loaded.gitsigns
+          local gs = require("gitsigns")
           local map = function(mode, keys, func, desc)
             vim.keymap.set(mode, keys, func, { buffer = bufnr, desc = "Git: " .. desc })
           end
 
           -- Navigate hunks (falls back to built-in ]c / [c in diff mode)
           map("n", "]c", function()
-            if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) else gs.next_hunk() end
+            if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) else gs.nav_hunk("next") end
           end, "Next hunk")
           map("n", "[c", function()
-            if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else gs.prev_hunk() end
+            if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else gs.nav_hunk("prev") end
           end, "Prev hunk")
 
           -- Stage / reset
@@ -47,7 +47,7 @@ return {
           map("v", "<leader>hs", function() gs.stage_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, "Stage hunk")
           map("v", "<leader>hr", function() gs.reset_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, "Reset hunk")
           map("n", "<leader>hS", gs.stage_buffer,    "Stage buffer")
-          map("n", "<leader>hu", gs.undo_stage_hunk, "Undo stage")
+          map("n", "<leader>hu", gs.stage_hunk, "Undo stage hunk (toggle)")
           map("n", "<leader>hR", gs.reset_buffer,    "Reset buffer")
           map("n", "<leader>hp", gs.preview_hunk,    "Preview hunk")
           map("n", "<leader>hb", function() gs.blame_line({ full = true }) end, "Blame line")

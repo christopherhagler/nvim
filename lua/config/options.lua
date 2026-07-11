@@ -32,7 +32,6 @@ opt.hlsearch   = true
 opt.incsearch  = true
 
 -- Files
-opt.fileencoding = "utf-8"
 opt.backup       = false
 opt.writebackup  = false
 opt.swapfile     = false

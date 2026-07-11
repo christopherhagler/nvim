@@ -1,0 +1,65 @@
+# Build the offline nvim-config RPM for air-gapped RHEL 8 / Rocky 8 systems.
+#
+# The job runs inside a Rocky Linux 8 container on the Ubuntu runner so every
+# compiled artifact (Neovim, treesitter parsers, fzf-native) links against
+# EL8's glibc 2.28 — the same environment rpm/build-rpm.sh targets on a
+# physical build host. (Fedora/newer images would link a newer glibc and the
+# binaries would not run on RHEL 8; CentOS 8 images are EOL.)
+#
+# Trigger it manually (Actions tab → "Build offline RPM" → Run workflow) or by
+# pushing a version tag (v*). The RPM lands in the run's artifacts; tag builds
+# also attach it to a GitHub Release.
+#
+# Action versions are pinned to the node20 generation deliberately: node20
+# needs glibc >= 2.28, which Rocky 8 satisfies exactly. If GitHub later forces
+# an action runtime with a higher glibc floor, switch this job to plain
+# `docker run rockylinux:8` steps on the host instead of `container:`.
+name: Build offline RPM
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # attach the RPM to releases on tag builds
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: rockylinux:8
+      # privileged: the build script's offline smoke test creates an empty
+      # network namespace with `unshare -rn`, which the default container
+      # seccomp profile blocks
+      options: --privileged
+    steps:
+      - name: Install git (checkout needs it inside the container)
+        run: dnf install -y git
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so `git describe --tags` versions the RPM
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build offline RPM
+        run: bash rpm/build-rpm.sh
+
+      - name: Report artifact
+        run: ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvim-config-rpm
+          path: dist/*.rpm
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.rpm

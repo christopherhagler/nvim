@@ -1,30 +1,34 @@
 return {
-  -- Treesitter: parser management, indent, auto-install
+  -- Treesitter (main branch): parser management, highlight, indent
   {
     "nvim-treesitter/nvim-treesitter",
+    branch = "main",
     build = ":TSUpdate",
     lazy = false,
-    opts = {
-      ensure_installed = {
-        "c", "cpp", "python",
-        "javascript", "typescript", "tsx",
-        "html", "css", "json", "yaml",
-        "lua", "vim", "vimdoc", "bash",
-        "markdown", "markdown_inline",
-        "asm",
-      },
-      auto_install = true,
-      highlight = { enable = true },
-      indent = { enable = true },
-      incremental_selection = {
-        enable = true,
-        keymaps = {
-          init_selection = "<C-space>",
-          node_incremental = "<C-space>",
-          node_decremental = "<bs>",
-        },
-      },
-    },
+    config = function()
+      local ts = require("nvim-treesitter")
+
+      -- Install only missing parsers. On air-gapped systems (offline RPM) the
+      -- parsers ship pre-compiled, so this is a no-op that never touches the
+      -- network or the parser registry.
+      local have = {}
+      for _, lang in ipairs(ts.get_installed()) do have[lang] = true end
+      local missing = vim.tbl_filter(
+        function(lang) return not have[lang] end,
+        require("config.parsers")
+      )
+      if #missing > 0 then ts.install(missing) end
+
+      -- The main branch has no highlight/indent modules; start them per buffer
+      vim.api.nvim_create_autocmd("FileType", {
+        group = vim.api.nvim_create_augroup("treesitter_start", { clear = true }),
+        callback = function(ev)
+          if pcall(vim.treesitter.start, ev.buf) then
+            vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
+      })
+    end,
   },
 
   -- Shows current function/class context at top of window
@@ -41,12 +45,7 @@ return {
     opts = { check_ts = true },
   },
 
-  -- gcc / gc for commenting
-  {
-    "numToStr/Comment.nvim",
-    event = { "BufReadPre", "BufNewFile" },
-    opts = {},
-  },
+  -- Commenting: built-in gcc / gc (Neovim 0.10+), no plugin needed
 
   -- cs"' / ds" / ysiw" style surround
   {
