@@ -79,7 +79,8 @@ preflight() {
   fi
 
   info "Checking build dependencies..."
-  local deps=(gcc gcc-c++ make cmake gettext curl unzip tar git rsync rpm-build "$PYTHON_BIN")
+  # clang-devel: libclang for bindgen when compiling the tree-sitter CLI
+  local deps=(gcc gcc-c++ make cmake gettext curl unzip tar git rsync rpm-build clang-devel "$PYTHON_BIN")
   local missing=()
   for dep in "${deps[@]}"; do
     rpm -q "$dep" &>/dev/null || command -v "$dep" &>/dev/null || missing+=("$dep")
