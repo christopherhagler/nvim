@@ -147,7 +147,7 @@ lua/
     telescope.lua           # Fuzzy finder
     lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, blink.cmp, snippets
     formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt)
-    linting.lua             # nvim-lint (ruff, eslint_d); shell linting via bashls/shellcheck
+    linting.lua             # nvim-lint (eslint_d); python via ruff LSP, shell via bashls/shellcheck
     dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python), bashdb (Bash)
     git.lua                 # vim-fugitive, gitsigns
     terminal.lua            # toggleterm
@@ -330,7 +330,7 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `saghen/blink.cmp` | Completion engine (built-in snippets, cmdline completion, auto-brackets) |
 | `b0o/schemastore.nvim` | JSON schema catalog for jsonls |
 | `stevearc/conform.nvim` | Formatting — clang-format (C/C++), prettier, black/isort, stylua, shfmt |
-| `mfussenegger/nvim-lint` | Linting (ruff, eslint_d); shellcheck runs inside bashls |
+| `mfussenegger/nvim-lint` | Linting (eslint_d); ruff and shellcheck run as/inside LSP servers |
 | `mfussenegger/nvim-dap` | Debug adapter protocol |
 | `rcarriga/nvim-dap-ui` | Debug UI |
 | `mfussenegger/nvim-dap-python` | Python debug adapter (debugpy) |

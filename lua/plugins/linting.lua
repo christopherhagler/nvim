@@ -6,10 +6,10 @@ return {
       local lint = require("lint")
 
       -- C/C++ diagnostics come from clangd; no separate linter needed.
-      -- Shell diagnostics come from bashls, which runs shellcheck itself
-      -- (with quick-fix code actions) — running it here again would duplicate.
+      -- Shell diagnostics come from bashls (runs shellcheck itself) and
+      -- Python from the auto-enabled ruff LSP server — both with quick-fix
+      -- code actions; running those linters here again would duplicate.
       lint.linters_by_ft = {
-        python          = { "ruff" },
         javascript      = { "eslint_d" },
         typescript      = { "eslint_d" },
         javascriptreact = { "eslint_d" },
