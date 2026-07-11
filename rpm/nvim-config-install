@@ -33,7 +33,7 @@ for d in lazy mason site; do
   cp -a "$DATA_SRC/$d" "$DATA_DST/$d"
 done
 
-echo "[ ok ] Neovim setup activated for $USER"
+echo "[ ok ] Neovim setup activated for ${USER:-$(id -un)}"
 echo ""
 echo "Next steps:"
 echo "  - Start a login shell (or 'source /etc/profile.d/nvim-config.sh') so"
