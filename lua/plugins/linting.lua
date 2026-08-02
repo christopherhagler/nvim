@@ -5,10 +5,11 @@ return {
     config = function()
       local lint = require("lint")
 
-      -- C/C++ diagnostics come from clangd; no separate linter needed.
-      -- Shell diagnostics come from bashls (runs shellcheck itself) and
-      -- Python from the auto-enabled ruff LSP server — both with quick-fix
-      -- code actions; running those linters here again would duplicate.
+      -- Only linters that no language server already covers belong here.
+      -- C/C++ diagnostics come from clangd, shell from bashls (which spawns
+      -- shellcheck itself), and Python from the ruff server enabled in
+      -- lua/config/servers.lua — all three with quick-fix code actions, which
+      -- nvim-lint cannot offer. Re-running them here would just duplicate.
       lint.linters_by_ft = {
         javascript      = { "eslint_d" },
         typescript      = { "eslint_d" },

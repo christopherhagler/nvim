@@ -56,9 +56,11 @@ IS_PIPED=false
 [ -t 0 ] || IS_PIPED=true
 
 ask() {
-  # ask <prompt> <varname>  — reads from /dev/tty so it works inside a pipe
-  local __var="$2"
-  read -rp "$1" "$__var" </dev/tty
+  # ask <prompt>  — echoes the answer. Reads from /dev/tty so it works inside a
+  # pipe; `read -p` writes the prompt to stderr, so it survives $( ) capture.
+  local reply
+  read -rp "$1" reply </dev/tty
+  printf '%s' "$reply"
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -144,7 +146,10 @@ check_optional_deps() {
 
 backup_config() {
   if [ -d "$NVIM_CONFIG_DIR" ]; then
-    local dest="${HOME}/.config/nvim.bak.$(date +%Y%m%d_%H%M%S)"
+    # Derived from NVIM_CONFIG_DIR, not $HOME/.config, so backups stay beside
+    # the config when XDG_CONFIG_HOME points somewhere else.
+    local dest
+    dest="${NVIM_CONFIG_DIR}.bak.$(date +%Y%m%d_%H%M%S)"
     info "Backing up $NVIM_CONFIG_DIR → $dest"
     cp -r "$NVIM_CONFIG_DIR" "$dest"
     ok "Backup saved to $dest"
@@ -163,6 +168,7 @@ run_nvim_headless() {
 
 # ── Commands ───────────────────────────────────────────────────────────────────
 cmd_install() {
+  local confirm
   banner
   header "Installing Neovim Config"
 
@@ -183,7 +189,7 @@ cmd_install() {
       die "Config already exists at $NVIM_CONFIG_DIR.\nRun the script directly to back up and replace:\n  bash setup.sh install"
     fi
     warn "Existing config detected at $NVIM_CONFIG_DIR"
-    ask "  Back up and replace it? [y/N] " confirm
+    confirm=$(ask "  Back up and replace it? [y/N] ")
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
     backup_config
     rm -rf "$NVIM_CONFIG_DIR"
@@ -215,11 +221,12 @@ cmd_install() {
 cmd_update() {
   header "Updating Neovim Config"
 
+  local confirm
   [ -d "$NVIM_CONFIG_DIR" ] || die "No config found at $NVIM_CONFIG_DIR. Run 'install' first."
 
   if ! git -C "$NVIM_CONFIG_DIR" diff --quiet 2>/dev/null; then
     warn "You have local changes in $NVIM_CONFIG_DIR"
-    ask "  Stash them and continue? [y/N] " confirm
+    confirm=$(ask "  Stash them and continue? [y/N] ")
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
     git -C "$NVIM_CONFIG_DIR" stash push -m "setup.sh auto-stash $(date +%Y%m%d_%H%M%S)"
     ok "Changes stashed"
@@ -253,8 +260,9 @@ cmd_remove() {
   [ -d "$NVIM_CONFIG_DIR" ] || die "No config found at $NVIM_CONFIG_DIR."
 
   warn "This will remove: $NVIM_CONFIG_DIR"
-  ask "  Also remove plugin data (~/.local/share/nvim)? [y/N] " remove_data
-  ask "  Are you sure? [y/N] " confirm
+  local remove_data confirm
+  remove_data=$(ask "  Also remove plugin data (~/.local/share/nvim)? [y/N] ")
+  confirm=$(ask "  Are you sure? [y/N] ")
   [[ "$confirm" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
 
   backup_config
@@ -356,21 +364,27 @@ cmd_backup() {
 }
 
 cmd_restore() {
+  local confirm
   header "Restore from Backup"
+
+  local parent base
+  parent="$(dirname "$NVIM_CONFIG_DIR")"
+  base="$(basename "$NVIM_CONFIG_DIR")"
 
   local backups=()
   while IFS= read -r -d '' dir; do
     backups+=("$dir")
-  done < <(find "${HOME}/.config" -maxdepth 1 -name "nvim.bak.*" -type d -print0 2>/dev/null | sort -rz)
+  done < <(find "$parent" -maxdepth 1 -name "${base}.bak.*" -type d -print0 2>/dev/null | sort -rz)
 
-  [ ${#backups[@]} -gt 0 ] || die "No backups found in ${HOME}/.config/"
+  [ ${#backups[@]} -gt 0 ] || die "No backups found in ${parent}/"
 
   echo "Available backups (newest first):"
   for i in "${!backups[@]}"; do
     echo "  [$(( i + 1 ))] ${backups[$i]}"
   done
   echo ""
-  ask "Select [1-${#backups[@]}]: " choice
+  local choice
+  choice=$(ask "Select [1-${#backups[@]}]: ")
 
   [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#backups[@]} )) \
     || die "Invalid selection."
@@ -379,7 +393,7 @@ cmd_restore() {
 
   if [ -d "$NVIM_CONFIG_DIR" ]; then
     warn "This will replace the current config."
-    ask "  Continue? [y/N] " confirm
+    confirm=$(ask "  Continue? [y/N] ")
     [[ "$confirm" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
     rm -rf "$NVIM_CONFIG_DIR"
   fi

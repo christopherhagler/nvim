@@ -64,21 +64,26 @@ return {
       { "folke/lazydev.nvim", ft = "lua", opts = {} },
     },
     config = function()
-      -- Install servers
-      -- NOTE: mirrored (as mason package names) in rpm/build-rpm.sh for the
-      -- offline RPM; the build script fails if the counts drift.
+      -- Install and enable servers (list: lua/config/servers.lua, which
+      -- rpm/build-rpm.sh reads directly when baking the offline payload)
+      local servers = require("config.servers")
       require("mason-lspconfig").setup({
-        ensure_installed = {
-          "clangd",   -- C/C++
-          "pyright",  -- Python
-          "ts_ls",    -- TypeScript/JavaScript
-          "html",     -- HTML
-          "cssls",    -- CSS
-          "jsonls",   -- JSON
-          "lua_ls",   -- Lua (for editing this config)
-          "bashls",   -- Bash/Shell
-        },
+        ensure_installed = servers,
+        -- Enable exactly these, rather than the default "every installed Mason
+        -- package whose name matches an lspconfig server". That default also
+        -- catches formatters: `stylua` has a `stylua --lsp` entry in
+        -- nvim-lspconfig, so installing it for conform silently started a
+        -- second, redundant server on every Lua buffer.
+        automatic_enable = servers,
       })
+
+      -- Neovim 0.11+ ships gr-prefixed LSP defaults (grr/grn/gra/gri/grt).
+      -- We rebind all of them below (gr, <leader>rn, <leader>a, gi, gy), and
+      -- leaving them in place would make every `gr` press wait out 'timeoutlen'
+      -- to see whether a second key follows.
+      for _, lhs in ipairs({ "grr", "grn", "gra", "gri", "grt" }) do
+        pcall(vim.keymap.del, "n", lhs)
+      end
 
       -- Diagnostic appearance
       vim.diagnostic.config({
@@ -97,69 +102,91 @@ return {
         float           = { border = "rounded", source = true },
       })
 
-      local on_attach = function(client, bufnr)
-        local map = function(keys, func, desc)
-          vim.keymap.set("n", keys, func, { buffer = bufnr, desc = "LSP: " .. desc })
-        end
+      -- Buffer-local LSP setup.
+      --
+      -- This is an LspAttach autocmd rather than an on_attach passed to
+      -- vim.lsp.config("*") for a reason: nvim-lspconfig ships its own
+      -- lsp/<server>.lua files, and several of them (clangd, pyright, ts_ls)
+      -- define an on_attach of their own. Per-server config wins the merge, so
+      -- a global on_attach is silently dropped for exactly those servers —
+      -- which left C/C++, Python and TS/JS with none of the mappings below.
+      -- LspAttach cannot be overridden by a server config.
+      vim.api.nvim_create_autocmd("LspAttach", {
+        group = vim.api.nvim_create_augroup("lsp_attach", { clear = true }),
+        callback = function(ev)
+          local client = assert(vim.lsp.get_client_by_id(ev.data.client_id))
+          local bufnr = ev.buf
+          local map = function(keys, func, desc)
+            vim.keymap.set("n", keys, func, { buffer = bufnr, desc = "LSP: " .. desc })
+          end
 
-        -- Navigation
-        map("gd", vim.lsp.buf.definition,    "Go to definition")
-        map("gD", vim.lsp.buf.declaration,   "Go to declaration")
-        map("gy", vim.lsp.buf.type_definition, "Go to type definition")
-        map("gi", vim.lsp.buf.implementation, "Go to implementation")
-        map("gr", function() require("telescope.builtin").lsp_references() end, "Find references")
-        map("K",  vim.lsp.buf.hover,         "Hover documentation")
+          -- ruff and pyright both attach to Python buffers. ruff owns linting
+          -- and quick fixes; silence its hover so K always comes from pyright.
+          if client.name == "ruff" then
+            client.server_capabilities.hoverProvider = false
+          end
 
-        -- Actions
-        map("<leader>rn", vim.lsp.buf.rename, "Rename symbol")
-        map("<leader>a",  vim.lsp.buf.code_action, "Code actions")
-        map("<leader>re", function()
-          vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
-        end, "Refactor")
-        map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
-        map("<leader>lf", function() require("conform").format({ async = true, lsp_format = "fallback" }) end, "Format buffer")
+          -- Navigation
+          map("gd", vim.lsp.buf.definition,    "Go to definition")
+          map("gD", vim.lsp.buf.declaration,   "Go to declaration")
+          map("gy", vim.lsp.buf.type_definition, "Go to type definition")
+          map("gi", vim.lsp.buf.implementation, "Go to implementation")
+          map("gr", function() require("telescope.builtin").lsp_references() end, "Find references")
+          map("K",  vim.lsp.buf.hover,         "Hover documentation")
 
-        -- Diagnostics
-        map("[g",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
-        map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
-        map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to location list")
+          -- Actions
+          map("<leader>rn", vim.lsp.buf.rename, "Rename symbol")
+          map("<leader>a",  vim.lsp.buf.code_action, "Code actions")
+          map("<leader>re", function()
+            vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
+          end, "Refactor")
+          map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
+          -- <leader>lf (format) is global — see lua/config/keymaps.lua. conform
+          -- formats plenty of filetypes that have no LSP server attached.
 
-        -- Inlay hints (inline parameter names / inferred types), on by default
-        if client:supports_method("textDocument/inlayHint") then
-          vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
-          map("<leader>li", function()
-            vim.lsp.inlay_hint.enable(
-              not vim.lsp.inlay_hint.is_enabled({ bufnr = bufnr }),
-              { bufnr = bufnr }
-            )
-          end, "Toggle inlay hints")
-        end
+          -- Diagnostics
+          map("[g",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
+          map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
+          map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to location list")
 
-        -- C/C++: jump between source and header (clangd extension)
-        if client.name == "clangd" then
-          map("<leader>lh", function()
-            client:request("textDocument/switchSourceHeader",
-              { uri = vim.uri_from_bufnr(bufnr) },
-              function(err, result)
-                if err or not result then
-                  vim.notify("No matching source/header file", vim.log.levels.WARN)
-                  return
-                end
-                vim.cmd.edit(vim.uri_to_fname(result))
-              end, bufnr)
-          end, "Switch source/header")
-        end
+          -- Inlay hints (inline parameter names / inferred types), on by default
+          if client:supports_method("textDocument/inlayHint") then
+            vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+            map("<leader>li", function()
+              vim.lsp.inlay_hint.enable(
+                not vim.lsp.inlay_hint.is_enabled({ bufnr = bufnr }),
+                { bufnr = bufnr }
+              )
+            end, "Toggle inlay hints")
+          end
 
-        -- CodeLens: managed capability on 0.12+ (refreshes itself on changes)
-        if client:supports_method("textDocument/codeLens") then
-          vim.lsp.codelens.enable(true, { bufnr = bufnr })
-        end
-      end
+          -- C/C++: jump between source and header (clangd extension)
+          if client.name == "clangd" then
+            map("<leader>lh", function()
+              client:request("textDocument/switchSourceHeader",
+                { uri = vim.uri_from_bufnr(bufnr) },
+                function(err, result)
+                  if err or not result then
+                    vim.notify("No matching source/header file", vim.log.levels.WARN)
+                    return
+                  end
+                  vim.cmd.edit(vim.uri_to_fname(result))
+                end, bufnr)
+            end, "Switch source/header")
+          end
 
-      -- Global defaults applied to every LSP server
+          -- CodeLens: managed capability on 0.12+ (refreshes itself on changes)
+          if client:supports_method("textDocument/codeLens") then
+            vim.lsp.codelens.enable(true, { bufnr = bufnr })
+          end
+        end,
+      })
+
+      -- Global defaults applied to every LSP server. Only 'capabilities' is
+      -- safe to set here: it is a table, so it deep-merges with each server's
+      -- own config instead of being replaced wholesale the way a function is.
       vim.lsp.config("*", {
         capabilities = require("blink.cmp").get_lsp_capabilities(),
-        on_attach    = on_attach,
       })
 
       -- Per-server overrides

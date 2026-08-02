@@ -19,11 +19,22 @@ return {
       )
       if #missing > 0 then ts.install(missing) end
 
+      -- Treesitter indentation is still marked experimental upstream and is
+      -- noticeably worse than the runtime indent scripts for these languages,
+      -- so keep highlighting but leave 'indentexpr' alone.
+      local no_ts_indent = { python = true }
+
+      -- Parsing a very large file blocks the UI for seconds; fall back to
+      -- regex syntax instead.
+      local max_filesize = 1024 * 1024 -- 1 MiB
+
       -- The main branch has no highlight/indent modules; start them per buffer
       vim.api.nvim_create_autocmd("FileType", {
         group = vim.api.nvim_create_augroup("treesitter_start", { clear = true }),
         callback = function(ev)
-          if pcall(vim.treesitter.start, ev.buf) then
+          local size = vim.fn.getfsize(vim.api.nvim_buf_get_name(ev.buf))
+          if size > max_filesize then return end
+          if pcall(vim.treesitter.start, ev.buf) and not no_ts_indent[ev.match] then
             vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
           end
         end,

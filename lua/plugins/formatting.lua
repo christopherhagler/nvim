@@ -14,6 +14,9 @@ return {
 
       require("conform").setup({
         formatters = {
+          -- shfmt indents with hard tabs unless told otherwise; match the
+          -- 2-space rule in lua/config/indent.lua. -ci indents switch cases.
+          shfmt = { prepend_args = { "-i", "2", "-ci" } },
           clang_format = {
             prepend_args = function(_, ctx)
               local project = vim.fs.find({ ".clang-format", "_clang-format" }, {
@@ -51,16 +54,8 @@ return {
     event = "VeryLazy",
     dependencies = { "mason-org/mason.nvim" },
     opts = {
-      -- NOTE: mirrored in rpm/build-rpm.sh for the offline RPM; the build
-      -- script fails if the counts drift.
-      ensure_installed = {
-        -- Formatters
-        "black", "isort", "prettier", "stylua", "shfmt", "clang-format",
-        -- Linters (shellcheck is run by bashls, not nvim-lint)
-        "ruff", "eslint_d", "shellcheck",
-        -- Debug adapters
-        "codelldb", "cpptools", "debugpy", "js-debug-adapter", "bash-debug-adapter",
-      },
+      -- List: lua/config/tools.lua (LSP servers live in lua/config/servers.lua)
+      ensure_installed = require("config.tools"),
       auto_update = false,
       -- Skip the startup install check on air-gapped systems (the offline RPM
       -- sets NVIM_OFFLINE via /etc/profile.d; everything ships pre-installed)

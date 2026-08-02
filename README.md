@@ -112,6 +112,12 @@ clean boot, LSP attach on C/Python/bash buffers, treesitter, and DAP configs.
 Component versions (Neovim tag, Node.js, ripgrep, tree-sitter CLI, python for
 debugpy) are pinned at the top of `rpm/build-rpm.sh` and overridable via env.
 
+The build script keeps no package lists of its own. It reads
+`lua/config/servers.lua`, `lua/config/tools.lua`, and `lua/config/parsers.lua`
+out of the staged config at build time — translating LSP server names to Mason
+package names with mason-lspconfig's own mapping — so adding a server or tool to
+the editor config is all that is needed to get it into the RPM.
+
 ### Install (on the air-gapped target)
 
 ```bash
@@ -140,6 +146,10 @@ lua/
     options.lua             # Core Neovim options
     keymaps.lua             # Global key mappings
     autocmds.lua            # Autocommands (whitespace trim, yank highlight, etc.)
+    indent.lua              # Per-filetype indent widths (applied by after/ftplugin)
+    servers.lua             # LSP servers to install/enable — single source of truth
+    tools.lua               # Mason formatters/linters/debug adapters — single source of truth
+    parsers.lua             # Treesitter parsers — single source of truth
   plugins/
     ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
     editor.lua              # Treesitter, autopairs, surround
@@ -152,8 +162,8 @@ lua/
     git.lua                 # vim-fugitive, gitsigns
     terminal.lua            # toggleterm
     ai.lua                  # claudecode.nvim (Claude Code editor integration)
-after/ftplugin/             # Per-language indentation settings
-  asm.lua, javascript.lua, typescript.lua, sh.lua
+after/ftplugin/             # One line per filetype; applies lua/config/indent.lua
+.stylua.toml                # Lua formatting (stylua defaults to tabs; this repo uses 2 spaces)
 rpm/                        # Offline RPM build for air-gapped EL8 systems
   build-rpm.sh              # One-command builder (run on a connected EL8 host)
   nvim-config.spec          # RPM spec
@@ -218,6 +228,15 @@ Leader key: `,`
 | `<leader>xf` | Send diagnostics to location list |
 | `[g` / `]g` | Prev / next diagnostic |
 
+Neovim 0.11+ ships its own `gr`-prefixed LSP mappings (`grr`, `grn`, `gra`,
+`gri`, `grt`). Every one of them is rebound above, so the config deletes them —
+otherwise `gr` would be a prefix of a live mapping and each press would stall
+for `timeoutlen` (500 ms) waiting for a second key.
+
+`<leader>lf` is a global mapping rather than an LSP one, so filetypes with a
+formatter but no language server (yaml, scss, markdown) can still be formatted.
+In visual mode it formats just the selection.
+
 ### Debugger (nvim-dap)
 
 VSCode-style function keys for stepping, plus leader mappings for the rest.
@@ -281,9 +300,11 @@ VS Code extension: selection/file context, diagnostics, and native diff review.
 | `<leader>gd` | Git diff |
 | `<leader>gb` | Git blame |
 | `]c` / `[c` | Next / prev hunk |
-| `<leader>hs` / `<leader>hr` | Stage / reset hunk |
+| `<leader>hs` / `<leader>hr` | Stage/unstage hunk (toggle) / reset hunk |
+| `<leader>hS` / `<leader>hR` | Stage / reset whole buffer |
 | `<leader>hp` | Preview hunk |
 | `<leader>hb` | Blame line |
+| `<leader>hd` | Diff this file against the index |
 
 ## Formatting
 
@@ -296,6 +317,12 @@ Formatting is handled by [conform.nvim](https://github.com/stevearc/conform.nvim
 | JS / TS / HTML / CSS / JSON / YAML | `prettier` |
 | Lua | `stylua` |
 | Shell | `shfmt` |
+
+Indent widths in `lua/config/indent.lua` are kept in step with what these
+formatters actually emit, so hand-written and formatted code agree. Both
+`stylua` and `shfmt` default to **hard tabs**, so they are pinned to spaces —
+`shfmt` via `-i 2` in `lua/plugins/formatting.lua`, `stylua` via `.stylua.toml`
+(which, being a project file, only governs this repo).
 
 ### C/C++ style
 

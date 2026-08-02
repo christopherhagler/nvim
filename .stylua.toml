@@ -1,0 +1,7 @@
+# StyLua defaults to hard tabs; this config (and Neovim Lua generally) uses
+# 2-space indentation, so pin it. Applies when formatting files in this repo
+# with <leader>lf. Column width matches 'colorcolumn' in lua/config/options.lua.
+column_width = 120
+indent_type = "Spaces"
+indent_width = 2
+quote_style = "AutoPreferDouble"

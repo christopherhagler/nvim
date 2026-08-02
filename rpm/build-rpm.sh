@@ -33,36 +33,16 @@ info() { echo -e "${BLUE}[info]${RESET}  $*"; }
 ok()   { echo -e "${GREEN}[ ok ]${RESET}  $*"; }
 die()  { echo -e "${RED}[err]${RESET}   $*" >&2; exit 1; }
 
-# ── Mason package lists ────────────────────────────────────────────────────────
-# Mirrors lua/plugins/lsp.lua (translated to mason package names) and
-# lua/plugins/formatting.lua (already mason names). Count-checked below.
+# ── Mason packages ─────────────────────────────────────────────────────────────
+# Not hardcoded: resolved at bake time from lua/config/servers.lua and
+# lua/config/tools.lua, with server names translated to Mason package names by
+# mason-lspconfig's own mapping table. There is no second list to drift.
+# Populated by resolve_mason_packages().
+#
 # If a package's prebuilt binary needs a newer glibc than EL8's 2.28, the
-# offline smoke test fails — pin an older build here with name@version
-# (e.g. clangd@17.0.3) and rebuild.
-MASON_LSP_PKGS=(
-  clangd pyright typescript-language-server html-lsp css-lsp json-lsp
-  lua-language-server bash-language-server
-)
-MASON_TOOL_PKGS=(
-  black isort prettier stylua shfmt clang-format
-  ruff eslint_d shellcheck
-  codelldb cpptools debugpy js-debug-adapter bash-debug-adapter
-)
-
-count_ensure_installed() {
-  sed -n '/ensure_installed = {/,/},/p' "$1" | grep -oE '"[A-Za-z0-9_-]+"' | wc -l | tr -d ' '
-}
-
-check_list_drift() {
-  local lsp_count tool_count
-  lsp_count=$(count_ensure_installed "$REPO_ROOT/lua/plugins/lsp.lua")
-  tool_count=$(count_ensure_installed "$REPO_ROOT/lua/plugins/formatting.lua")
-  [ "$lsp_count" -eq "${#MASON_LSP_PKGS[@]}" ] \
-    || die "LSP list drift: lua/plugins/lsp.lua has $lsp_count servers, build script has ${#MASON_LSP_PKGS[@]} — update MASON_LSP_PKGS"
-  [ "$tool_count" -eq "${#MASON_TOOL_PKGS[@]}" ] \
-    || die "Tool list drift: lua/plugins/formatting.lua has $tool_count tools, build script has ${#MASON_TOOL_PKGS[@]} — update MASON_TOOL_PKGS"
-  ok "Mason package lists in sync with the lua config ($lsp_count servers, $tool_count tools)"
-}
+# offline smoke test fails — pin an older build in lua/config/tools.lua with
+# name@version (e.g. clang-format@17.0.3) and rebuild.
+MASON_PKGS=()
 
 # ── Preflight ──────────────────────────────────────────────────────────────────
 preflight() {
@@ -92,8 +72,6 @@ preflight() {
     $sudo_cmd dnf install -y "${missing[@]}" || die "Failed to install build deps"
   fi
   ok "Build dependencies present"
-
-  check_list_drift
 }
 
 # ── Fetch / build components ───────────────────────────────────────────────────
@@ -173,6 +151,45 @@ staged_nvim() {
     "$ROOT$PREFIX/nvim/bin/nvim" --headless "$@"
 }
 
+# Resolve the Mason package list straight from the Lua config, so the editor
+# config stays the single source of truth. LSP servers are named by their
+# lspconfig name (clangd, ts_ls, …) and translated here via mason-lspconfig's
+# mapping table; tools are already Mason package names.
+#
+# mason.nvim must be loaded first (it populates the registry the mapping reads),
+# but mason-lspconfig is only put on the runtimepath — loading it properly would
+# run its config and kick off a second, unsupervised install pass.
+resolve_mason_packages() {
+  info "Resolving Mason packages from the Lua config..."
+  local list="$WORK/mason-packages.txt"
+  rm -f "$list"
+
+  staged_nvim \
+    "+lua require('lazy').load({plugins={'mason.nvim'}})
+      vim.opt.rtp:prepend(require('lazy.core.config').plugins['mason-lspconfig.nvim'].dir)
+      local to_pkg = require('mason-lspconfig.mappings').get_all().lspconfig_to_package
+      local pkgs = {}
+      for _, server in ipairs(require('config.servers')) do
+        if not to_pkg[server] then
+          io.stderr:write('no Mason package for LSP server: ' .. server .. '\n')
+          vim.cmd('cq')
+        end
+        table.insert(pkgs, to_pkg[server])
+      end
+      vim.list_extend(pkgs, require('config.tools'))
+      local f = assert(io.open('$list', 'w'))
+      f:write(table.concat(pkgs, '\n') .. '\n')
+      f:close()" \
+    +qa || die "could not resolve Mason packages from lua/config/{servers,tools}.lua"
+
+  [ -s "$list" ] || die "resolved an empty Mason package list"
+  MASON_PKGS=()
+  while IFS= read -r pkg; do
+    if [ -n "$pkg" ]; then MASON_PKGS+=("$pkg"); fi
+  done < "$list"
+  ok "Mason packages resolved (${#MASON_PKGS[@]}): ${MASON_PKGS[*]}"
+}
+
 bake_payload() {
   info "Staging config into synthetic HOME..."
   mkdir -p "$STAGE_HOME/.config"
@@ -181,7 +198,21 @@ bake_payload() {
 
   info "Installing plugins from lazy-lock.json..."
   staged_nvim "+Lazy! restore" +qa
+  # `Lazy! restore` exits 0 even when a clone fails, so verify explicitly —
+  # a missing plugin here would otherwise only surface on the air-gapped box.
+  staged_nvim \
+    "+lua local missing = {}
+      for _, p in pairs(require('lazy.core.config').plugins) do
+        if not p._.installed then table.insert(missing, p.name) end
+      end
+      if #missing > 0 then
+        io.stderr:write('plugins not installed: ' .. table.concat(missing, ', ') .. '\n')
+        vim.cmd('cq')
+      end" \
+    +qa || die "lazy.nvim did not install every plugin"
   ok "Plugins restored"
+
+  resolve_mason_packages
 
   info "Warming up blink.cmp (prebuilt fuzzy matcher download)..."
   staged_nvim \
@@ -210,14 +241,15 @@ bake_payload() {
   info "Installing Mason packages (LSP servers, tools, debug adapters)..."
   staged_nvim \
     "+lua require('lazy').load({plugins={'mason.nvim'}})" \
-    "+MasonInstall ${MASON_LSP_PKGS[*]} ${MASON_TOOL_PKGS[*]}" \
+    "+MasonInstall ${MASON_PKGS[*]}" \
     +qa
   local pkg
-  for pkg in "${MASON_LSP_PKGS[@]}" "${MASON_TOOL_PKGS[@]}"; do
-    [ -f "$STAGE_HOME/.local/share/nvim/mason/packages/$pkg/mason-receipt.json" ] \
+  for pkg in "${MASON_PKGS[@]}"; do
+    # strip any name@version pin — the install directory is just the name
+    [ -f "$STAGE_HOME/.local/share/nvim/mason/packages/${pkg%%@*}/mason-receipt.json" ] \
       || die "Mason package failed to install: $pkg"
   done
-  ok "All ${#MASON_LSP_PKGS[@]} servers + ${#MASON_TOOL_PKGS[@]} tools installed"
+  ok "All ${#MASON_PKGS[@]} Mason packages installed"
 
   info "Pruning caches..."
   rm -rf "$STAGE_HOME/.cache" "$STAGE_HOME/.local/state" \

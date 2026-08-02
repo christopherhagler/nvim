@@ -33,3 +33,10 @@ map("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
 
 -- Show diagnostics for the current line
 map("n", "<leader>e", vim.diagnostic.open_float, { desc = "Line diagnostics" })
+
+-- Format (global, not LSP-scoped: conform handles filetypes such as yaml and
+-- scss that have no language server attached). In visual mode conform detects
+-- the selection and formats only that range.
+map({ "n", "v" }, "<leader>lf", function()
+  require("conform").format({ async = true, lsp_format = "fallback" })
+end, { desc = "Format buffer/selection" })

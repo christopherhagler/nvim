@@ -6,10 +6,14 @@ local autocmd = vim.api.nvim_create_autocmd
 autocmd("BufWritePre", {
   group = augroup("trim_whitespace", { clear = true }),
   pattern = "*",
-  callback = function()
-    if vim.bo.filetype == "markdown" or not vim.bo.modifiable then return end
+  callback = function(ev)
+    local bo = vim.bo[ev.buf]
+    if bo.filetype == "markdown" or bo.buftype ~= "" or not bo.modifiable then return end
     local view = vim.fn.winsaveview()
-    vim.cmd([[%s/\s\+$//e]])
+    -- keeppatterns: without it the substitution becomes the last search
+    -- pattern, so every save leaves trailing whitespace lit up by 'hlsearch'
+    -- and hijacks the next n/N.
+    vim.cmd([[keeppatterns %s/\s\+$//e]])
     vim.fn.winrestview(view)
   end,
 })

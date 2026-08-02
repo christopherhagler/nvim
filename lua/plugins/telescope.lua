@@ -28,8 +28,12 @@ return {
       telescope.setup({
         defaults = {
           path_display = { "smart" },
+          -- Lua patterns, not globs: "*.o" would match a literal asterisk and
+          -- silently never fire. Anchor extensions with %. and $.
           file_ignore_patterns = {
-            "node_modules", ".git/", "*.o", "*.out", "__pycache__", ".venv",
+            "^%.git/", "/%.git/",
+            "node_modules/", "__pycache__/", "%.venv/",
+            "%.o$", "%.out$",
           },
           mappings = {
             i = {
