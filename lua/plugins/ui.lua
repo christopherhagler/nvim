@@ -1,37 +1,84 @@
 return {
   -- Colorscheme
   {
-    "folke/tokyonight.nvim",
+    "ellisonleao/gruvbox.nvim",
     priority = 1000,
     config = function()
-      require("tokyonight").setup({
-        style = "moon",
-        light_style = "day",
-        transparent = false,
+      -- gruvbox uses one palette for both backgrounds and just flips the roles,
+      -- so pick the handful of colors we reference ourselves off 'background'.
+      local dark = vim.o.background ~= "light"
+      local bg_normal = dark and "#282828" or "#fbf1c7" -- bg0
+      local bg_sunken = dark and "#1d2021" or "#ebdbb2" -- one step away from bg0
+      local blue       = dark and "#83a598" or "#076678"
+      local orange     = dark and "#fe8019" or "#af3a03"
+
+      require("gruvbox").setup({
+        contrast = "",
+        transparent_mode = false,
         terminal_colors = true,
         dim_inactive = true,
-        lualine_bold = true,
-        styles = {
-          comments = { italic = true },
-          keywords = { italic = true },
-          functions = { bold = true },
-          variables = {},
-          sidebars = "dark",
-          floats = "dark",
+        bold = true,
+        italic = {
+          comments = true,
+          strings = false,
+          operators = false,
+          emphasis = true,
+          folds = true,
         },
-        sidebars = { "qf", "help", "terminal", "neo-tree", "nvim-tree" },
-        on_highlights = function(hl, c)
+        overrides = {
           -- Visible matching brackets
-          hl.MatchParen = { fg = c.orange, bold = true, underline = true }
+          MatchParen = { fg = orange, bold = true, underline = true },
           -- Stronger indent scope line
-          hl.IblScope = { fg = c.blue2 }
+          IblScope = { fg = blue },
           -- Popup menu selection stands out more
-          hl.PmenuSel = { bg = c.blue, fg = c.bg }
-          -- Float borders match the theme
-          hl.FloatBorder = { fg = c.blue1, bg = c.bg_float }
+          PmenuSel = { bg = blue, fg = bg_normal, bold = true },
+          -- Floats and sidebars sit a shade off the normal background
+          NormalFloat = { bg = bg_sunken },
+          FloatBorder = { fg = blue, bg = bg_sunken },
+          NormalSidebar = { bg = bg_sunken },
+          NvimTreeNormal = { bg = bg_sunken },
+          NvimTreeNormalNC = { bg = bg_sunken },
+          NvimTreeEndOfBuffer = { fg = bg_sunken, bg = bg_sunken },
+          NvimTreeWinSeparator = { fg = bg_sunken, bg = bg_sunken },
+        },
+      })
+      vim.cmd.colorscheme("gruvbox")
+
+      -- gruvbox has no per-group italic/bold switches, so layer those on top of
+      -- whatever colors the scheme resolved to. Treesitter groups link straight
+      -- to color groups rather than to Keyword/Function, so name both.
+      local function add(group, attrs)
+        local hl = vim.api.nvim_get_hl(0, { name = group, link = false })
+        vim.api.nvim_set_hl(0, group, vim.tbl_extend("force", hl, attrs))
+      end
+
+      local function restyle()
+        for _, g in ipairs({ "Keyword", "Statement", "Conditional", "Repeat", "Exception", "@keyword" }) do
+          add(g, { italic = true })
+        end
+        for _, g in ipairs({ "Function", "@function", "@function.call", "@function.method" }) do
+          add(g, { bold = true })
+        end
+      end
+
+      local group = vim.api.nvim_create_augroup("gruvbox_tweaks", { clear = true })
+      vim.api.nvim_create_autocmd("ColorScheme", { group = group, pattern = "gruvbox", callback = restyle })
+      restyle()
+
+      -- Sunken background for sidebar-ish windows
+      vim.api.nvim_create_autocmd("FileType", {
+        group = group,
+        pattern = { "qf", "help" },
+        callback = function()
+          vim.wo.winhighlight = "Normal:NormalSidebar,NormalNC:NormalSidebar"
         end,
       })
-      vim.cmd.colorscheme("tokyonight")
+      vim.api.nvim_create_autocmd("TermOpen", {
+        group = group,
+        callback = function()
+          vim.wo.winhighlight = "Normal:NormalSidebar,NormalNC:NormalSidebar"
+        end,
+      })
     end,
   },
 
@@ -55,7 +102,7 @@ return {
       require("lualine").setup({
         options = {
           icons_enabled = true,
-          theme = "tokyonight",
+          theme = "gruvbox",
           component_separators = { left = "", right = "" },
           section_separators = { left = "", right = "" },
           globalstatus = true,
