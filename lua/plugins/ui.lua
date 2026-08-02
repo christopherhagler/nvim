@@ -1,84 +1,81 @@
 return {
   -- Colorscheme
   {
-    "ellisonleao/gruvbox.nvim",
+    "folke/tokyonight.nvim",
     priority = 1000,
     config = function()
-      -- gruvbox uses one palette for both backgrounds and just flips the roles,
-      -- so pick the handful of colors we reference ourselves off 'background'.
-      local dark = vim.o.background ~= "light"
-      local bg_normal = dark and "#282828" or "#fbf1c7" -- bg0
-      local bg_sunken = dark and "#1d2021" or "#ebdbb2" -- one step away from bg0
-      local blue       = dark and "#83a598" or "#076678"
-      local orange     = dark and "#fe8019" or "#af3a03"
-
-      require("gruvbox").setup({
-        contrast = "",
-        transparent_mode = false,
+      require("tokyonight").setup({
+        style = "night",
+        light_style = "day",
+        transparent = false,
         terminal_colors = true,
-        dim_inactive = true,
-        bold = true,
-        italic = {
-          comments = true,
-          strings = false,
-          operators = false,
-          emphasis = true,
-          folds = true,
+        -- Dimming the inactive split washes out half the screen and forces the
+        -- eye to re-adapt on every window jump. Off is calmer with splits open.
+        dim_inactive = false,
+        lualine_bold = true,
+        styles = {
+          comments = { italic = true },
+          keywords = { italic = true },
+          functions = { bold = true },
+          variables = {},
+          sidebars = "dark",
+          floats = "dark",
         },
-        overrides = {
+        sidebars = { "qf", "help", "terminal", "neo-tree", "nvim-tree" },
+        -- Eye-comfort pass. Stock night spans a very wide contrast range: body
+        -- text is 10.6:1 against the background while comments are 2.9:1, so
+        -- the eye keeps re-adapting. These values compress that to ~4.3:1 –
+        -- 8.3:1 — comments become legible, bright text stops glaring, and the
+        -- hottest accents come down to meet everything else. Hues are
+        -- untouched, so it still reads as tokyonight.
+        --
+        -- All ratios below are against night's bg (#1a1b26). Switching back to
+        -- storm (#24283b) lifts every ratio here by roughly 15%, so the values
+        -- want re-tuning if you change 'style'.
+        on_colors = function(c)
+          c.fg      = "#aab4d2" -- was #c0caf5 — 10.6:1 -> 8.3:1
+          c.fg_dark = "#98a0c2"
+          c.comment = "#757ea6" -- was #565f89 — 2.9:1 -> 4.3:1, the big one
+          c.dark3   = "#646d98" -- line numbers, ignored files
+          c.dark5   = "#7e87b0"
+
+          -- The four accents that read hottest on a dark background.
+          c.cyan   = "#6cb4dc" -- 10.0:1 -> 7.5:1
+          c.green  = "#8cb75f" -- 9.4:1 -> 7.4:1
+          c.yellow = "#c69a5e" -- 8.5:1 -> 6.7:1
+          c.orange = "#dc8a58" -- 8.4:1 -> 6.4:1
+
+          -- on_colors runs after tokyonight derives these, so re-point the ones
+          -- that were copied from values we just changed.
+          c.fg_float   = c.fg
+          c.fg_sidebar = c.fg_dark
+          c.warning    = c.yellow
+          c.git.ignore = c.dark3
+          c.terminal.white        = c.fg_dark
+          c.terminal.white_bright = c.fg
+          c.terminal.green        = c.green
+          c.terminal.yellow       = c.yellow
+          c.terminal.cyan         = c.cyan
+        end,
+        on_highlights = function(hl, c)
+          -- Stock LineNr is fg_gutter (1.5:1) — effectively invisible, and with
+          -- relativenumber on you read it constantly. dark3 lands at 3.3:1:
+          -- legible at a glance without competing with the code.
+          hl.LineNr = { fg = c.dark3 }
+          hl.LineNrAbove = { fg = c.dark3 }
+          hl.LineNrBelow = { fg = c.dark3 }
           -- Visible matching brackets
-          MatchParen = { fg = orange, bold = true, underline = true },
+          hl.MatchParen = { fg = c.orange, bold = true, underline = true }
           -- Stronger indent scope line
-          IblScope = { fg = blue },
-          -- Popup menu selection stands out more
-          PmenuSel = { bg = blue, fg = bg_normal, bold = true },
-          -- Floats and sidebars sit a shade off the normal background
-          NormalFloat = { bg = bg_sunken },
-          FloatBorder = { fg = blue, bg = bg_sunken },
-          NormalSidebar = { bg = bg_sunken },
-          NvimTreeNormal = { bg = bg_sunken },
-          NvimTreeNormalNC = { bg = bg_sunken },
-          NvimTreeEndOfBuffer = { fg = bg_sunken, bg = bg_sunken },
-          NvimTreeWinSeparator = { fg = bg_sunken, bg = bg_sunken },
-        },
-      })
-      vim.cmd.colorscheme("gruvbox")
-
-      -- gruvbox has no per-group italic/bold switches, so layer those on top of
-      -- whatever colors the scheme resolved to. Treesitter groups link straight
-      -- to color groups rather than to Keyword/Function, so name both.
-      local function add(group, attrs)
-        local hl = vim.api.nvim_get_hl(0, { name = group, link = false })
-        vim.api.nvim_set_hl(0, group, vim.tbl_extend("force", hl, attrs))
-      end
-
-      local function restyle()
-        for _, g in ipairs({ "Keyword", "Statement", "Conditional", "Repeat", "Exception", "@keyword" }) do
-          add(g, { italic = true })
-        end
-        for _, g in ipairs({ "Function", "@function", "@function.call", "@function.method" }) do
-          add(g, { bold = true })
-        end
-      end
-
-      local group = vim.api.nvim_create_augroup("gruvbox_tweaks", { clear = true })
-      vim.api.nvim_create_autocmd("ColorScheme", { group = group, pattern = "gruvbox", callback = restyle })
-      restyle()
-
-      -- Sunken background for sidebar-ish windows
-      vim.api.nvim_create_autocmd("FileType", {
-        group = group,
-        pattern = { "qf", "help" },
-        callback = function()
-          vim.wo.winhighlight = "Normal:NormalSidebar,NormalNC:NormalSidebar"
+          hl.IblScope = { fg = c.blue2 }
+          -- Popup menu selection: muted blue rather than a full-saturation bar,
+          -- which flashes on every keystroke while completing.
+          hl.PmenuSel = { bg = c.blue0, fg = c.fg, bold = true }
+          -- Float borders match the theme
+          hl.FloatBorder = { fg = c.blue1, bg = c.bg_float }
         end,
       })
-      vim.api.nvim_create_autocmd("TermOpen", {
-        group = group,
-        callback = function()
-          vim.wo.winhighlight = "Normal:NormalSidebar,NormalNC:NormalSidebar"
-        end,
-      })
+      vim.cmd.colorscheme("tokyonight")
     end,
   },
 
@@ -102,7 +99,7 @@ return {
       require("lualine").setup({
         options = {
           icons_enabled = true,
-          theme = "gruvbox",
+          theme = "tokyonight",
           component_separators = { left = "", right = "" },
           section_separators = { left = "", right = "" },
           globalstatus = true,
@@ -186,7 +183,7 @@ return {
         { "<leader>h", group = "Hunks" },
         { "<leader>l", group = "LSP" },
         { "<leader>q", group = "Session" },
-        { "<leader>r", group = "Refactor" },
+        { "<leader>r", group = "Refactor/Replace" },
         { "<leader>x", group = "Diagnostics" },
       })
     end,

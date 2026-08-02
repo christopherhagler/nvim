@@ -58,6 +58,58 @@ return {
 
   -- Commenting: built-in gcc / gc (Neovim 0.10+), no plugin needed
 
+  -- Project-wide search and replace. Telescope finds across the project but
+  -- cannot change anything; this is the write half. Results open in a normal
+  -- buffer you edit in place, then <leader>rp applies them across every file.
+  -- Backed by the same ripgrep the RPM already bundles (rpm/build-rpm.sh).
+  {
+    "MagicDuck/grug-far.nvim",
+    cmd = "GrugFar",
+    keys = {
+      {
+        "<leader>rr",
+        function() require("grug-far").open() end,
+        desc = "Replace in project",
+      },
+      {
+        "<leader>rw",
+        function() require("grug-far").open({ prefills = { search = vim.fn.expand("<cword>") } }) end,
+        desc = "Replace word under cursor",
+      },
+      {
+        "<leader>rf",
+        function() require("grug-far").open({ prefills = { paths = vim.fn.expand("%") } }) end,
+        desc = "Replace in current file",
+      },
+      {
+        "<leader>rr",
+        mode = "v",
+        function() require("grug-far").with_visual_selection() end,
+        desc = "Replace selection in project",
+      },
+    },
+    opts = {
+      -- maplocalleader is ',' — the same key as mapleader — so grug-far's
+      -- '<localleader><letter>' defaults land directly on our leader namespace.
+      -- The ones remapped here are those whose default is a *prefix* of an
+      -- existing mapping (,r ,l ,q ,c ,f ,x) or that would shadow a complete
+      -- one (,t ,w). Left alone, each would make the global key wait out
+      -- 'timeoutlen' inside a grug-far buffer — the same trap the grr defaults
+      -- set in lua/plugins/lsp.lua. Everything not listed keeps its default.
+      keymaps = {
+        replace = { n = "<leader>ra" }, -- apply all replacements
+        syncLocations = { n = "<leader>rs" },
+        syncLine = { n = "<leader>rl" },
+        qflist = { n = "<leader>rq" },
+        close = { n = "<leader>rc" },
+        refresh = { n = "<leader>ru" },
+        historyOpen = { n = "<leader>rh" },
+        swapReplacementInterpreter = { n = "<leader>rx" },
+        toggleShowCommand = { n = "<leader>rm" },
+      },
+    },
+  },
+
   -- cs"' / ds" / ysiw" style surround
   {
     "kylechui/nvim-surround",

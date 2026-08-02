@@ -24,7 +24,7 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 
 - **Neovim** >= 0.11.0 (0.12.x recommended) — native `vim.lsp` config requires 0.11+
 - **Git**
-- **ripgrep** — live grep in Telescope
+- **ripgrep** — live grep in Telescope, and the search engine behind grug-far
 - **make** — required to build the telescope-fzf-native extension
 - **A C compiler** — clang (macOS) or gcc (RHEL/Rocky); used for treesitter parsers and clangd projects
 - **tree-sitter CLI** >= 0.26 — required by nvim-treesitter (main branch) to install parsers; install via package manager or `cargo install tree-sitter-cli`, not npm
@@ -151,8 +151,8 @@ lua/
     tools.lua               # Mason formatters/linters/debug adapters — single source of truth
     parsers.lua             # Treesitter parsers — single source of truth
   plugins/
-    ui.lua                  # gruvbox, lualine, which-key, noice, trouble, indent guides
-    editor.lua              # Treesitter, autopairs, surround
+    ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
+    editor.lua              # Treesitter, autopairs, surround, grug-far (project search/replace)
     explorer.lua            # nvim-tree (file explorer), aerial (symbols outline)
     telescope.lua           # Fuzzy finder
     lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, blink.cmp, snippets
@@ -206,6 +206,42 @@ Leader key: `,`
 | `<leader>fr` | Recent files |
 | `<leader>fd` | Diagnostics |
 | `<leader>fs` | Document symbols |
+
+Telescope is read-only — it finds matches but cannot change them. Project-wide
+edits go through grug-far below.
+
+### Search & Replace (grug-far)
+
+Project-wide find and replace, backed by ripgrep. Opens a normal buffer: edit
+the search/replace/files fields at the top, watch the live preview update, then
+apply across every matching file.
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>rr` | Replace in project (also works on a visual selection) |
+| `<leader>rw` | Replace word under cursor |
+| `<leader>rf` | Replace in current file only |
+
+Inside the results buffer:
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>ra` | Apply all replacements to disk |
+| `<leader>rs` | Sync edited results back to their files |
+| `<leader>rl` | Sync just the current line |
+| `<leader>rq` | Send results to quickfix |
+| `<leader>ru` | Refresh results |
+| `<leader>rh` | Search history |
+| `<leader>rc` | Close |
+| `<enter>` | Jump to the match under the cursor |
+| `g?` | Full keymap help |
+
+Because `maplocalleader` is also `,`, grug-far's `<localleader><letter>`
+defaults would collide with the leader namespace — `<localleader>r` is a prefix
+of `<leader>rr`, and so on for `,l ,q ,c ,f ,x`. Each would stall for
+`timeoutlen` inside a grug-far buffer, the same trap the `gr` defaults set under
+LSP below. The colliding ones are remapped in `lua/plugins/editor.lua`;
+everything else keeps its upstream default (see `g?`).
 
 ### LSP
 
@@ -334,7 +370,7 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 
 | Plugin | Purpose |
 | :--- | :--- |
-| `ellisonleao/gruvbox.nvim` | Colorscheme |
+| `folke/tokyonight.nvim` | Colorscheme (night style) |
 | `folke/trouble.nvim` | Project-wide diagnostics panel |
 | `folke/persistence.nvim` | Session save/restore per working directory |
 | `nvim-lualine/lualine.nvim` | Status line |
@@ -352,6 +388,7 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `nvim-tree/nvim-tree.lua` | File explorer |
 | `stevearc/aerial.nvim` | LSP-powered symbols outline |
 | `nvim-telescope/telescope.nvim` | Fuzzy finder |
+| `MagicDuck/grug-far.nvim` | Project-wide search and replace (ripgrep) |
 | `mason-org/mason.nvim` | LSP/tool installer |
 | `mason-org/mason-lspconfig.nvim` | Bridges Mason with native `vim.lsp` config (Neovim 0.11+) |
 | `saghen/blink.cmp` | Completion engine (built-in snippets, cmdline completion, auto-brackets) |

@@ -103,7 +103,7 @@ check_required_deps() {
 
 check_optional_deps() {
   local items=(
-    "rg:ripgrep (Telescope live grep)"
+    "rg:ripgrep (Telescope live grep, grug-far search/replace)"
     "make:make (telescope-fzf-native build)"
     "node:Node.js (TS/JS LSP, prettier)"
     "python3:Python 3 (pyright, debugpy)"
