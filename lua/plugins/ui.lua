@@ -21,7 +21,7 @@ return {
           sidebars = "dark",
           floats = "dark",
         },
-        sidebars = { "qf", "help", "terminal", "neo-tree", "nvim-tree" },
+        sidebars = { "qf", "help", "terminal", "nvim-tree" },
         -- Eye-comfort pass. Stock night spans a very wide contrast range: body
         -- text is 10.6:1 against the background while comments are 2.9:1, so
         -- the eye keeps re-adapting. These values compress that to ~4.3:1 –
@@ -103,7 +103,7 @@ return {
           component_separators = { left = "", right = "" },
           section_separators = { left = "", right = "" },
           globalstatus = true,
-          disabled_filetypes = { statusline = { "neo-tree", "nvim-tree" } },
+          disabled_filetypes = { statusline = { "nvim-tree" } },
         },
         sections = {
           lualine_a = { "mode" },
@@ -176,6 +176,7 @@ return {
       local wk = require("which-key")
       wk.setup({})
       wk.add({
+        { "<leader>b", group = "Build/Run" },
         { "<leader>c", group = "Claude" },
         { "<leader>d", group = "Debug" },
         { "<leader>f", group = "Find" },
@@ -184,6 +185,8 @@ return {
         { "<leader>l", group = "LSP" },
         { "<leader>q", group = "Session" },
         { "<leader>r", group = "Refactor/Replace" },
+        { "<leader>s", group = "Swap (treesitter)" },
+        { "<leader>T", group = "Test" },
         { "<leader>x", group = "Diagnostics" },
       })
     end,

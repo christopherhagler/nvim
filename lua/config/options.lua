@@ -38,6 +38,14 @@ opt.swapfile     = false
 opt.undofile     = true
 opt.undodir      = vim.fn.stdpath("data") .. "/undodir"
 
+-- Project-local config: Neovim sources .nvim.lua / .nvimrc / .exrc from the
+-- directory it was started in. 0.11+ asks once per file before running it and
+-- remembers the answer (:trust), so an untrusted repo can't execute anything
+-- silently. This is what makes the per-project hooks the rest of the config
+-- already looks for actually load — vim.g.gdb_path (lua/plugins/dap.lua),
+-- vim.g.build_cmd / vim.g.run_cmd (lua/config/build.lua).
+opt.exrc = true
+
 -- Behavior
 opt.clipboard   = "unnamedplus"
 opt.mouse       = "a"

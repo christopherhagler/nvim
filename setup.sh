@@ -109,6 +109,8 @@ check_optional_deps() {
     "python3:Python 3 (pyright, debugpy)"
     "tree-sitter:tree-sitter CLI >= 0.26 (nvim-treesitter parser installs)"
     "unzip:unzip (Mason package extraction)"
+    "cmake:cmake (CMake project builds via <leader>bb and :CompileCommands)"
+    "bear:bear (records compile flags from a make build for clangd — :CompileCommands)"
   )
   # gdb drives C/C++ debugging on Linux only; macOS uses codelldb
   [ "$(uname -s)" = "Linux" ] && items+=("gdb:gdb (C/C++ debugging via cpptools)")
@@ -306,13 +308,18 @@ cmd_health() {
     "git:git" "rg:ripgrep" "make:make"
     "node:Node.js" "python3:Python 3"
     "tree-sitter:tree-sitter CLI" "unzip:unzip"
+    "cmake:cmake" "bear:bear"
   )
   [ "$(uname -s)" = "Linux" ] && tools+=("gdb:gdb")
 
   for entry in "${tools[@]}"; do
     local cmd="${entry%%:*}" label="${entry##*:}"
     if command -v "$cmd" &>/dev/null; then
-      local ver; ver=$("$cmd" --version 2>/dev/null | head -1 | grep -oE '[0-9][0-9.]+' | head -1)
+      # '|| true' is load-bearing under 'set -euo pipefail': several of these
+      # tools exit non-zero for --version (unzip returns 10) and grep exits 1
+      # when a version string can't be found. Either one aborted the whole
+      # health report mid-list, silently — everything after unzip never printed.
+      local ver; ver=$("$cmd" --version 2>/dev/null | head -1 | grep -oE '[0-9][0-9.]+' | head -1) || true
       ok "  ${label}${ver:+ (${ver})}"
     else
       warn "  ${label} — not found"

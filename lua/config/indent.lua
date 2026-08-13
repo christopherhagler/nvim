@@ -27,6 +27,9 @@ M.rules = {
   markdown = 2,
   sh = 2,
   bash = 2,
+  toml = 2,
+  -- cmake-format's own default is 2 (lua/plugins/formatting.lua)
+  cmake = 2,
   -- Assembly conventionally uses hard tabs, 8 columns wide
   asm = { width = 8, tabs = true },
 }

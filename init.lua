@@ -22,6 +22,7 @@ vim.g.loaded_ruby_provider = 0
 require("config.options")
 require("config.keymaps")
 require("config.autocmds")
+require("config.commands")
 
 require("lazy").setup("plugins", {
   change_detection = { notify = false },

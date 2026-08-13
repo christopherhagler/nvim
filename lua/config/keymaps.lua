@@ -31,8 +31,41 @@ map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
 map("n", "]b", "<cmd>bnext<cr>",     { desc = "Next buffer" })
 map("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
 
+-- Quickfix / location list navigation. This is the list every compiler error,
+-- grep hit and LSP reference lands in, so it needs motions as cheap as ]b.
+-- Both wrap: :cnext at the end of the list raises E553 rather than cycling,
+-- which is never what you want mid-build.
+local function list_jump(step, wrap)
+  if not pcall(vim.cmd, step) then pcall(vim.cmd, wrap) end
+  pcall(vim.cmd, "normal! zz")
+end
+
+map("n", "]q", function() list_jump("cnext", "cfirst") end,     { desc = "Next quickfix item" })
+map("n", "[q", function() list_jump("cprevious", "clast") end,  { desc = "Prev quickfix item" })
+map("n", "]l", function() list_jump("lnext", "lfirst") end,     { desc = "Next loclist item" })
+map("n", "[l", function() list_jump("lprevious", "llast") end,  { desc = "Prev loclist item" })
+
+-- Toggle the quickfix window itself (Trouble's <leader>xq is the prettier
+-- view; this is the raw list, which is what :make and :grep populate)
+map("n", "<leader>xc", function()
+  local open = vim.iter(vim.fn.getwininfo()):any(function(w) return w.quickfix == 1 and w.loclist == 0 end)
+  vim.cmd(open and "cclose" or "copen")
+end, { desc = "Toggle quickfix window" })
+
 -- Show diagnostics for the current line
 map("n", "<leader>e", vim.diagnostic.open_float, { desc = "Line diagnostics" })
+
+-- Build / run. Detection and the quickfix plumbing live in lua/config/build.lua;
+-- a project overrides either command from its .nvim.lua (see 'exrc').
+map("n", "<leader>bb", function() require("config.build").build() end, { desc = "Build project" })
+map("n", "<leader>br", function() require("config.build").run() end,   { desc = "Run current file" })
+map("n", "<leader>bk", function() require("config.build").stop() end,  { desc = "Stop build" })
+map("n", "<leader>bc", function()
+  vim.ui.input({ prompt = "Build command: ", default = select(1, require("config.build").build_cmd()) },
+    function(cmd)
+      if cmd and cmd ~= "" then require("config.build").build(cmd) end
+    end)
+end, { desc = "Build with a custom command" })
 
 -- Format (global, not LSP-scoped: conform handles filetypes such as yaml and
 -- scss that have no language server attached). In visual mode conform detects

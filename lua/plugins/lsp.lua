@@ -25,6 +25,13 @@ return {
         preset = "enter",
         ["<Tab>"]   = { "select_next", "snippet_forward", "fallback" },
         ["<S-Tab>"] = { "select_prev", "snippet_backward", "fallback" },
+        -- Dismiss the menu with <Esc> instead of the preset's <C-e>. "hide"
+        -- only fires while the menu is open and swallows the key; with the
+        -- menu closed it falls through, so <Esc> still leaves insert mode
+        -- normally. To bail out of both at once, `jk` is mapped noremap to a
+        -- literal <Esc> (lua/config/keymaps.lua), so it bypasses this mapping
+        -- and leaves insert mode in one press even with the menu up.
+        ["<Esc>"] = { "hide", "fallback" },
       },
       completion = {
         -- Don't preselect: <CR> only accepts after an explicit <Tab> selection
@@ -141,6 +148,13 @@ return {
             vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
           end, "Refactor")
           map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
+
+          -- Call hierarchy: "who calls this?" / "what does this call?".
+          -- gr answers it textually; these answer it structurally, which is
+          -- the difference that matters in a C codebase where a name like
+          -- `init` has 200 references and four of them are calls.
+          map("<leader>lI", function() require("telescope.builtin").lsp_incoming_calls() end, "Incoming calls")
+          map("<leader>lO", function() require("telescope.builtin").lsp_outgoing_calls() end, "Outgoing calls")
           -- <leader>lf (format) is global — see lua/config/keymaps.lua. conform
           -- formats plenty of filetypes that have no LSP server attached.
 
@@ -194,14 +208,47 @@ return {
         cmd = {
           "clangd",
           "--background-index",
+          -- Indexing every translation unit on all cores makes a large project
+          -- unresponsive while it runs. Half the cores keeps the editor usable.
+          "-j=" .. math.max(1, math.floor((vim.uv.available_parallelism() or 4) / 2)),
+          "--background-index-priority=low",
           "--clang-tidy",
           "--header-insertion=iwyu",
           "--completion-style=detailed",
           "--function-arg-placeholders=true",
+          -- Complete symbols that aren't visible yet and add the #include for
+          -- them — the main reason to prefer clangd over ctags in a big tree.
+          "--all-scopes-completion",
+          -- Preambles in RAM rather than /tmp: measurably faster completion,
+          -- and avoids filling a small /tmp on the RHEL boxes.
+          "--pch-storage=memory",
+        },
+        -- Without a compile_commands.json, clangd has to guess how each file is
+        -- compiled and reports every project header as missing. These flags are
+        -- the guess it uses until :CompileCommands generates the real thing
+        -- (lua/config/compiledb.lua).
+        --
+        -- No -std here, deliberately: fallbackFlags are passed to every file the
+        -- server opens, C and C++ alike, and one clangd process serves both
+        -- filetypes in a mixed project. A -std=c++20 in this list puts "Invalid
+        -- argument '-std=c++20' not allowed with 'C'" on line 1 of every .c file
+        -- that has no compile command. Raising the standard is per-language, so
+        -- it belongs in a .clangd file — which is what :CompileCommands! writes.
+        init_options = {
+          fallbackFlags = { "-Wall", "-Wextra" },
         },
       })
 
       vim.lsp.config("pyright", {
+        -- Resolve the project's virtualenv before the server starts. Without
+        -- this, pyright type-checks against whatever python3 is on $PATH, so
+        -- every dependency installed in a .venv reads as a missing import.
+        before_init = function(_, config)
+          local python = require("config.venv").python(config.root_dir)
+          if python then
+            config.settings.python.pythonPath = python
+          end
+        end,
         settings = {
           python = {
             analysis = {
@@ -236,6 +283,25 @@ return {
             workspace   = { checkThirdParty = false },
             telemetry   = { enable = false },
           },
+        },
+      })
+
+      vim.lsp.config("eslint", {
+        settings = {
+          -- Monorepos run eslint from the nearest package dir, not the repo
+          -- root, so relative plugin/config paths resolve the way the project's
+          -- own `npx eslint` would.
+          workingDirectories = { mode = "auto" },
+        },
+      })
+
+      -- Emmet is an abbreviation expander, not a diagnostics source: it only
+      -- ever contributes completion items, so it sits alongside html/cssls
+      -- and ts_ls without either fighting it.
+      vim.lsp.config("emmet_language_server", {
+        filetypes = {
+          "html", "css", "scss", "less",
+          "javascript", "javascriptreact", "typescript", "typescriptreact",
         },
       })
     end,

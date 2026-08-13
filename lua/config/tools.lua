@@ -7,9 +7,12 @@
 return {
   -- Formatters
   "black", "isort", "prettier", "stylua", "shfmt", "clang-format",
-  -- Linters. shellcheck is spawned by bashls rather than nvim-lint; Python
-  -- linting belongs to the ruff LSP server, so only eslint_d runs standalone.
-  "eslint_d", "shellcheck",
+  "cmakelang", -- provides cmake-format for CMakeLists.txt
+  -- Linters. Anything a language server already covers stays out: shellcheck
+  -- is spawned by bashls, C/C++ by clangd's clang-tidy, Python by ruff, and
+  -- JS/TS by the eslint server. That leaves the two formats with no server.
+  "markdownlint", "yamllint",
+  "shellcheck",
   -- Debug adapters
   "codelldb", "cpptools", "debugpy", "js-debug-adapter", "bash-debug-adapter",
 }

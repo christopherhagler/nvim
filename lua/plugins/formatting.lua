@@ -30,6 +30,7 @@ return {
         formatters_by_ft = {
           c          = { "clang_format" },
           cpp        = { "clang_format" },
+          cmake      = { "cmake_format" },
           python     = { "black", "isort" },
           javascript = { "prettier" },
           typescript = { "prettier" },
@@ -40,6 +41,7 @@ return {
           scss  = { "prettier" },
           json  = { "prettier" },
           yaml  = { "prettier" },
+          markdown = { "prettier" },
           lua   = { "stylua" },
           sh    = { "shfmt" },
         },

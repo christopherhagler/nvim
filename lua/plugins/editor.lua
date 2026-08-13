@@ -49,6 +49,122 @@ return {
     opts = { max_lines = 3 },
   },
 
+  -- Syntax-aware text objects: daf deletes a function, cia changes an argument,
+  -- ]f jumps to the next one. These work identically in C, C++, Python, Lua and
+  -- TS because they are defined against the parse tree rather than per-language
+  -- regexes — the single biggest editing win available from treesitter.
+  --
+  -- Pinned to the main branch to match nvim-treesitter above: the master branch
+  -- configures itself through nvim-treesitter.configs, which main removed, so
+  -- mixing the two silently installs no mappings at all.
+  {
+    "nvim-treesitter/nvim-treesitter-textobjects",
+    branch = "main",
+    dependencies = { "nvim-treesitter/nvim-treesitter" },
+    event = { "BufReadPre", "BufNewFile" },
+    config = function()
+      require("nvim-treesitter-textobjects").setup({
+        select = {
+          -- Start the textobject from just before the cursor if there is none
+          -- under it, so `cif` works from the blank line above a function
+          lookahead = true,
+        },
+        move = { set_jumps = true }, -- <C-o> returns from a ]f jump
+      })
+
+      local select = require("nvim-treesitter-textobjects.select")
+      local move = require("nvim-treesitter-textobjects.move")
+      local swap = require("nvim-treesitter-textobjects.swap")
+
+      -- a = "around" (includes the signature/braces), i = "inside" (the body)
+      local objects = {
+        f = "function",
+        c = "class",
+        a = "parameter",
+        i = "conditional",
+        l = "loop",
+        m = "call",
+      }
+      for key, obj in pairs(objects) do
+        for _, part in ipairs({ "outer", "inner" }) do
+          local lhs = (part == "outer" and "a" or "i") .. key
+          vim.keymap.set({ "x", "o" }, lhs, function()
+            select.select_textobject("@" .. obj .. "." .. part, "textobjects")
+          end, { desc = ("%s %s"):format(part == "outer" and "Around" or "Inside", obj) })
+        end
+      end
+
+      -- Movement. ]c / [c are left alone: gitsigns owns them for hunks.
+      local moves = {
+        ["]f"] = { move.goto_next_start, "@function.outer", "Next function" },
+        ["[f"] = { move.goto_previous_start, "@function.outer", "Prev function" },
+        ["]F"] = { move.goto_next_end, "@function.outer", "Next function end" },
+        ["[F"] = { move.goto_previous_end, "@function.outer", "Prev function end" },
+        ["]]"] = { move.goto_next_start, "@class.outer", "Next class" },
+        ["[["] = { move.goto_previous_start, "@class.outer", "Prev class" },
+      }
+      for lhs, spec in pairs(moves) do
+        vim.keymap.set({ "n", "x", "o" }, lhs, function()
+          spec[1](spec[2], "textobjects")
+        end, { desc = spec[3] })
+      end
+
+      -- Reorder arguments and functions without a visual selection
+      vim.keymap.set("n", "<leader>sa", function() swap.swap_next("@parameter.inner") end,
+        { desc = "Swap parameter with next" })
+      vim.keymap.set("n", "<leader>sA", function() swap.swap_previous("@parameter.inner") end,
+        { desc = "Swap parameter with prev" })
+      vim.keymap.set("n", "<leader>sf", function() swap.swap_next("@function.outer") end,
+        { desc = "Swap function with next" })
+      vim.keymap.set("n", "<leader>sF", function() swap.swap_previous("@function.outer") end,
+        { desc = "Swap function with prev" })
+    end,
+  },
+
+  -- % jumps between more than brackets: #if/#else/#endif in C, if/end in Lua,
+  -- do/done in shell, opening/closing tags in HTML.
+  {
+    "andymass/vim-matchup",
+    event = { "BufReadPre", "BufNewFile" },
+    init = function()
+      -- The offscreen popup would duplicate nvim-treesitter-context, which is
+      -- already showing the enclosing function at the top of the window.
+      vim.g.matchup_matchparen_offscreen = {}
+    end,
+  },
+
+  -- Generate a documentation comment for the symbol under the cursor, in each
+  -- language's own convention: doxygen for C/C++, google-style for Python,
+  -- JSDoc for JS/TS, LDoc for Lua.
+  {
+    "danymat/neogen",
+    cmd = "Neogen",
+    keys = {
+      { "<leader>ld", function() require("neogen").generate() end, desc = "Generate doc comment" },
+    },
+    opts = {
+      snippet_engine = "nvim", -- built-in vim.snippet, no extra dependency
+      languages = {
+        c = { template = { annotation_convention = "doxygen" } },
+        cpp = { template = { annotation_convention = "doxygen" } },
+        python = { template = { annotation_convention = "google_docstrings" } },
+        lua = { template = { annotation_convention = "ldoc" } },
+      },
+    },
+  },
+
+  -- Browse the undo tree. 'undofile' is on (lua/config/options.lua), so this
+  -- reaches edits from previous sessions, which u/<C-r> alone cannot.
+  {
+    "mbbill/undotree",
+    cmd = "UndotreeToggle",
+    keys = { { "<leader>u", "<cmd>UndotreeToggle<cr>", desc = "Toggle undo tree" } },
+    init = function()
+      vim.g.undotree_WindowLayout = 2      -- tree left, diff below it
+      vim.g.undotree_SetFocusWhenToggle = 1
+    end,
+  },
+
   -- Auto-close brackets and quotes
   {
     "windwp/nvim-autopairs",

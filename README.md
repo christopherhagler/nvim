@@ -1,6 +1,6 @@
 # Neovim Configuration
 
-A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, and `nvim-dap` for debugging.
+A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, `nvim-dap` for debugging, and `neotest` for tests. Building and running are built in — `<leader>bb` compiles the project into the quickfix list, `<leader>br` runs the current file.
 
 ## Table of Contents
 
@@ -9,6 +9,11 @@ A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Use
 - [Air-gapped install (RPM)](#air-gapped-install-rpm)
 - [File Structure](#file-structure)
 - [Key Mappings](#key-mappings)
+- [Building and running](#building-and-running)
+- [C/C++ project setup](#cc-project-setup)
+- [Python virtualenvs](#python-virtualenvs)
+- [The project root](#the-project-root)
+- [Project-local configuration](#project-local-configuration)
 - [Formatting](#formatting)
 - [Plugins](#plugins)
 
@@ -34,12 +39,28 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 - **bash >= 4** — for bash script debugging via bashdb (macOS ships 3.2: `brew install bash`)
 - **Linux only:** a clipboard tool (`xclip`, `xsel`, or `wl-clipboard`) for system-clipboard integration, and `gdb` for C/C++ debugging
 
+Optional, per workflow:
+
+- **cmake** — for CMake projects; `:CompileCommands` and `<leader>bb` both drive it
+- **bear** — records compile flags from a `make` build so clangd can read them (`:CompileCommands`). Only needed for Makefile projects; CMake exports the same data itself. EPEL ships it on EL8 (`dnf install bear`), Homebrew on macOS.
+- **pytest / jest / vitest / gtest** — installed per project, not globally; `<leader>Tr` runs whichever the project uses
+
 ### Platform notes (macOS / RHEL 8 / Rocky 8)
 
 - **Neovim on RHEL 8 / Rocky 8**: official release binaries require glibc 2.31+, but EL8 ships 2.28 — build from source or use a compatible build.
 - **C/C++ debugging** picks the right adapter per platform automatically: codelldb (LLDB) on macOS, gdb via cpptools on Linux. Both stay available in the `<F5>` picker.
 - **blink.cmp** downloads a prebuilt Rust fuzzy matcher; if it's incompatible with the system (e.g. old glibc), it falls back to the Lua matcher with a warning — completion keeps working.
+- **Language standard for single-file builds** is probed, not assumed. EL8 ships gcc 8.5, which predates `-std=c++20` entirely; `<leader>bb` asks the compiler what it accepts (newest first, `c++20 → c++17 → c++14`) and caches the answer. macOS clang gets c++20, Rocky 8 gets c++17, neither needs configuring. Single-file **C++** builds additionally need `gcc-c++` installed, which the base `gcc` package does not pull in.
+- **`bear`** changed its CLI between versions 2 and 3 (version 3 requires a `--` separator before the build command, version 2 rejects it). `:CompileCommands` checks the installed version and uses the matching form.
+- **cmake >= 3.13** is required for the `cmake -S . -B build` form used by `<leader>bb` and `:CompileCommands`. RHEL/Rocky 8.2+ ship 3.20 or newer; only an unpatched 8.0 install (cmake 3.11) is too old.
+- **`<leader>K`** needs `man-pages` and `man-db`, which minimal RHEL/Rocky installs omit. Without them it reports "no man page" and nothing else changes.
+- **Deliberately excluded** because their upstream binaries need a newer glibc than EL8 provides: `asm_lsp` and `neocmakelsp`. Anything that would work on the Mac but not the RHEL boxes does not go in `lua/config/servers.lua`.
 - `setup.sh` (install/health) checks all of the above per platform.
+
+Everything else added for building, testing and editing is either pure Lua/Vimscript
+(no binaries at all) or runs on the two runtimes the RPM already bundles — Node
+22.17 for the npm-based tools (eslint, emmet, markdownlint, prettier) and
+python3.11 for the pip-based ones (yamllint, cmake-format, debugpy).
 
 ## Installation
 
@@ -70,9 +91,12 @@ chmod +x setup.sh
 
 ### Manual install
 
-1. ```bash
+1. Clone the repository:
+
+   ```bash
    git clone https://github.com/christopherhagler/nvim.git ~/.config/nvim
    ```
+
 2. Open Neovim — `lazy.nvim` bootstraps and installs all plugins on first launch.
 3. Run `:Mason` to install LSP servers, formatters, linters, and debug adapters.
 
@@ -139,30 +163,38 @@ target, and each user re-runs `nvim-config-install`.
 
 ## File Structure
 
-```
+```text
 init.lua                    # Entry point — lazy.nvim bootstrap
 lua/
   config/
     options.lua             # Core Neovim options
     keymaps.lua             # Global key mappings
     autocmds.lua            # Autocommands (whitespace trim, yank highlight, etc.)
+    commands.lua            # User commands (:Build, :Run, :CompileCommands, :FormatOnSave)
+    project.lua             # Project root detection — one marker list, shared by everything below
+    build.lua               # Build/run detection, async compile into the quickfix list
+    compiledb.lua           # compile_commands.json generation for clangd
+    venv.lua                # Python virtualenv resolution (pyright + debugpy + :Run)
+    cfamily.lua             # Buffer-local C/C++ setup (include path, man pages)
     indent.lua              # Per-filetype indent widths (applied by after/ftplugin)
     servers.lua             # LSP servers to install/enable — single source of truth
     tools.lua               # Mason formatters/linters/debug adapters — single source of truth
     parsers.lua             # Treesitter parsers — single source of truth
   plugins/
     ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
-    editor.lua              # Treesitter, autopairs, surround, grug-far (project search/replace)
+    editor.lua              # Treesitter + textobjects, matchup, autopairs, surround, grug-far, neogen, undotree
     explorer.lua            # nvim-tree (file explorer), aerial (symbols outline)
     telescope.lua           # Fuzzy finder
     lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, blink.cmp, snippets
-    formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt)
-    linting.lua             # nvim-lint (eslint_d); python via ruff LSP, shell via bashls/shellcheck
-    dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python), bashdb (Bash)
+    formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt, cmake-format)
+    linting.lua             # nvim-lint (markdownlint, yamllint); every other language is covered by its LSP
+    dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python), js-debug, bashdb
+    testing.lua             # neotest + pytest / jest / vitest / gtest adapters
     git.lua                 # vim-fugitive, gitsigns
     terminal.lua            # toggleterm
     ai.lua                  # claudecode.nvim (Claude Code editor integration)
-after/ftplugin/             # One line per filetype; applies lua/config/indent.lua
+after/ftplugin/             # Per-filetype settings; applies lua/config/indent.lua
+                            # (c.lua and cpp.lua additionally pull in config/cfamily.lua)
 .stylua.toml                # Lua formatting (stylua defaults to tabs; this repo uses 2 spaces)
 rpm/                        # Offline RPM build for air-gapped EL8 systems
   build-rpm.sh              # One-command builder (run on a connected EL8 host)
@@ -184,6 +216,24 @@ Leader key: `,`
 | `n` / `N` | Next / prev search result (centered) |
 | `<Esc>` | Clear search highlight |
 | `<leader>t` | Toggle horizontal terminal |
+| `<leader>u` | Toggle undo tree |
+
+### Completion (blink.cmp)
+
+| Key | Action |
+| :--- | :--- |
+| `<Tab>` / `<S-Tab>` | Select next / previous item, or jump between snippet fields |
+| `<CR>` | Accept the selected item |
+| `<Esc>` | Dismiss the menu (stays in insert mode) |
+| `jk` | Leave insert mode, menu open or not |
+| `<C-space>` | Show / toggle documentation |
+| `<C-b>` / `<C-f>` | Scroll the documentation window |
+
+Nothing is preselected, so `<CR>` only ever accepts something you chose with
+`<Tab>` — a bare `<CR>` inserts a newline. `<Esc>` only swallows the keypress
+while the menu is actually open; with it closed it leaves insert mode as usual.
+`jk` is mapped `noremap` to a literal `<Esc>`, so it bypasses the completion
+mapping entirely and does both in one press.
 
 ### Navigation
 
@@ -191,9 +241,44 @@ Leader key: `,`
 | :--- | :--- |
 | `<C-h/j/k/l>` | Move between windows |
 | `[b` / `]b` | Previous / next buffer |
+| `[q` / `]q` | Previous / next quickfix item (wraps) |
+| `[l` / `]l` | Previous / next location list item (wraps) |
+| `<leader>xc` | Toggle the quickfix window |
 | `<leader>n` | Toggle file explorer (nvim-tree) |
 | `<leader>N` | Reveal current file in explorer |
 | `<F8>` | Toggle symbols outline (aerial) |
+
+The quickfix list is where compiler errors, test failures, grep results and LSP
+references all land, so `]q` / `[q` are the motions that tie building, testing
+and searching together. Both wrap rather than raising `E553` at the end.
+
+### Text objects and movement (treesitter)
+
+Defined against the parse tree, so they work the same in C, C++, Python, Lua,
+JS/TS and every other configured language.
+
+| Key | Object |
+| :--- | :--- |
+| `af` / `if` | A function (with signature) / its body |
+| `ac` / `ic` | A class / its body |
+| `aa` / `ia` | An argument or parameter |
+| `ai` / `ii` | An if/else statement / its body |
+| `al` / `il` | A loop / its body |
+| `am` / `im` | A function call / its arguments |
+
+Combine with any operator: `daf` deletes a function, `cia` changes an argument,
+`vac` selects a class, `yif` yanks a function body.
+
+| Key | Action |
+| :--- | :--- |
+| `]f` / `[f` | Next / previous function |
+| `]F` / `[F` | Next / previous function end |
+| `]]` / `[[` | Next / previous class |
+| `<leader>sa` / `<leader>sA` | Swap parameter with the next / previous one |
+| `<leader>sf` / `<leader>sF` | Swap function with the next / previous one |
+| `%` | Jump between matching pairs, including `#if` / `#else` / `#endif`, `if`/`end`, `do`/`done`, and HTML tags (vim-matchup) |
+
+`]c` / `[c` are deliberately left to gitsigns for hunk navigation.
 
 ### Telescope
 
@@ -205,7 +290,16 @@ Leader key: `,`
 | `<leader>fh` | Help tags |
 | `<leader>fr` | Recent files |
 | `<leader>fd` | Diagnostics |
-| `<leader>fs` | Document symbols |
+| `<leader>fs` | Document symbols (current file) |
+| `<leader>fS` | Workspace symbols (whole project, via the LSP index) |
+| `<leader>fw` | Grep the word under the cursor (or the visual selection) |
+| `<leader>f/` | Fuzzy find inside the current buffer |
+| `<leader>fc` | Changed files (git status) |
+| `<leader>fp` | Resume the last picker, query intact |
+| `<leader>fk` | Search keymaps |
+
+`<leader>fS` asks the language server, not the filesystem — on a C or C++ tree
+it is the fastest way to reach a function whose file you don't know.
 
 Telescope is read-only — it finds matches but cannot change them. Project-wide
 edits go through grug-far below.
@@ -232,6 +326,8 @@ Inside the results buffer:
 | `<leader>rq` | Send results to quickfix |
 | `<leader>ru` | Refresh results |
 | `<leader>rh` | Search history |
+| `<leader>rx` | Toggle the replacement between literal text and Lua interpreter |
+| `<leader>rm` | Show the underlying ripgrep command |
 | `<leader>rc` | Close |
 | `<enter>` | Jump to the match under the cursor |
 | `g?` | Full keymap help |
@@ -242,6 +338,17 @@ of `<leader>rr`, and so on for `,l ,q ,c ,f ,x`. Each would stall for
 `timeoutlen` inside a grug-far buffer, the same trap the `gr` defaults set under
 LSP below. The colliding ones are remapped in `lua/plugins/editor.lua`;
 everything else keeps its upstream default (see `g?`).
+
+### Build & Run
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>bb` | Build the project (async, errors to quickfix) |
+| `<leader>br` | Run the current file in a terminal split |
+| `<leader>bc` | Build with a custom command (prefilled with the detected one) |
+| `<leader>bk` | Stop the running build |
+
+See [Building and running](#building-and-running) for what gets detected.
 
 ### LSP
 
@@ -259,10 +366,20 @@ everything else keeps its upstream default (see `g?`).
 | `<leader>lc` | CodeLens action |
 | `<leader>lf` | Format buffer (manual; via conform) |
 | `<leader>li` | Toggle inlay hints |
+| `<leader>ld` | Generate a doc comment for the symbol below (neogen) |
+| `<leader>lI` / `<leader>lO` | Incoming / outgoing calls (call hierarchy) |
 | `<leader>lh` | Switch source/header (C/C++, clangd) |
+| `<leader>lg` | Generate `compile_commands.json` (C/C++) |
+| `<leader>K` | Man page for the word under the cursor (C/C++) |
 | `<leader>e` | Show line diagnostics |
 | `<leader>xf` | Send diagnostics to location list |
 | `[g` / `]g` | Prev / next diagnostic |
+
+`gr` finds every textual reference; `<leader>lI` answers the narrower question
+of what actually *calls* this, which is the one that matters when a name like
+`init` has two hundred references. `<leader>ld` writes the comment skeleton in
+each language's own convention — doxygen for C/C++, google-style docstrings for
+Python, JSDoc for JS/TS, LDoc for Lua.
 
 Neovim 0.11+ ships its own `gr`-prefixed LSP mappings (`grr`, `grn`, `gra`,
 `gri`, `grt`). Every one of them is rebound above, so the config deletes them —
@@ -277,8 +394,8 @@ In visual mode it formats just the selection.
 
 VSCode-style function keys for stepping, plus leader mappings for the rest.
 The same keys drive every configured language: C/C++ (codelldb / gdb), Python
-(debugpy), JS/TS (js-debug), and Bash (bashdb). `<F5>` in a bash script offers
-"Launch current script" and "Launch with arguments".
+(debugpy), JS/TS and React (js-debug, node or Chrome), and Bash (bashdb).
+`<F5>` lists every configuration that applies to the current filetype.
 
 | Key | Action |
 | :--- | :--- |
@@ -288,10 +405,65 @@ The same keys drive every configured language: C/C++ (codelldb / gdb), Python
 | `<F10>` | Step over |
 | `<F11>` | Step into |
 | `<S-F11>` | Step out |
+| `<leader>db` | Toggle breakpoint |
 | `<leader>dB` | Conditional breakpoint |
+| `<leader>dc` | Run to cursor |
+| `<leader>de` | Exception breakpoints (per-adapter list) |
+| `<leader>dv` | Evaluate expression under cursor / selection |
 | `<leader>du` | Toggle DAP UI |
 | `<leader>dr` | Debug REPL |
 | `<leader>dl` | Run last |
+| `<leader>dt` | Terminate session |
+| `<leader>dC` | Clear all breakpoints |
+
+**Picking what to debug.** The C/C++ launch configurations no longer ask you to
+type a path. They scan `build/`, `bin/`, `out/`, `cmake-build-*/` and
+`target/debug/` for executables and offer them **newest first**, since the
+binary you just rebuilt is nearly always the one you want; the last choice for
+a project is remembered and floated to the top. "Enter a path manually…" is
+always the final entry. Each language also has a "with arguments" variant that
+prompts for argv, so the common case stays a single keypress.
+
+**Language notes.**
+
+- **C/C++** — codelldb (LLDB) is listed first on macOS, gdb via cpptools first on Linux; both stay available everywhere. Launches use an integrated terminal, so a program that reads stdin works.
+- **Python** — debugpy runs from Mason's own venv, but the *debugged program* runs under the project's virtualenv (see [Python virtualenvs](#python-virtualenvs)). Without that split, every third-party import fails under the debugger only.
+- **JS/TS** — node launch/attach, plus "Launch Chrome against dev server" for browser debugging. `.jsx` and `.tsx` are wired up too, which plain `javascript`/`typescript` configs miss.
+- **Bash** — needs bash >= 4 (macOS ships 3.2; Homebrew's is used when present).
+
+### Testing (neotest)
+
+Runs whichever framework the project uses: pytest, jest, vitest, or gtest.
+Failures show up as signs in the gutter and land in the quickfix list, so `]q`
+walks them the same way it walks compiler errors.
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>Tr` | Run the nearest test |
+| `<leader>Tf` | Run the current file |
+| `<leader>Ta` | Run every test in the project |
+| `<leader>Tl` | Run the last test again |
+| `<leader>Td` | Debug the nearest test (breakpoints, DAP UI) |
+| `<leader>Tk` | Stop the running test |
+| `<leader>Ts` | Toggle the summary tree |
+| `<leader>To` | Show output for the test under the cursor |
+| `<leader>Tp` | Toggle the output panel |
+| `<leader>Tw` | Watch the current file and re-run on change |
+| `]t` / `[t` | Next / previous failed test |
+
+`<leader>T` rather than `<leader>t`, which is already the terminal toggle.
+
+C++ is the one language that cannot be auto-discovered: gtest tests are compiled
+into a binary whose path only the build system knows, so it has to be recorded
+once per project. `:ConfigureGtest` is a **buffer-local** command that only
+exists inside the neotest summary window, not a global one:
+
+1. `<leader>Ts` to open the summary tree.
+2. Mark the test files or directories with `m`.
+3. `:ConfigureGtest` in that window, and give it the path to the compiled test
+   binary (`build/my_tests`).
+
+The answer is stored per project, so this survives restarts.
 
 ### Claude (claudecode.nvim)
 
@@ -342,15 +514,133 @@ VS Code extension: selection/file context, diagnostics, and native diff review.
 | `<leader>hb` | Blame line |
 | `<leader>hd` | Diff this file against the index |
 
+## Building and running
+
+`<leader>bb` builds, `<leader>br` runs. Neither needs a plugin or any per-project
+setup, and both are implemented in `lua/config/build.lua`.
+
+**Build** detects the project's build system by walking up from the current file:
+
+| Marker | Command |
+| :--- | :--- |
+| `CMakeLists.txt` | `cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build` |
+| `Makefile` | `make` |
+| `Cargo.toml` | `cargo build` |
+| `package.json` | `npm run build` |
+| none, in a `.c`/`.cpp` file | `cc`/`c++` with `-Wall -Wextra -g` into the cache directory |
+
+The build runs **asynchronously** — `:make` would freeze the editor for the
+length of the compile — and its output is parsed with `errorformat` into the
+quickfix list, so `]q` and `[q` walk the errors. On failure the quickfix window
+opens without stealing the cursor; on success it closes and reports any
+warnings. `<leader>bk` stops a build in progress.
+
+The CMake line configures every time, which is a no-op once the cache exists.
+That is deliberate: a fresh clone builds on the first `<leader>bb`, and
+`compile_commands.json` stays in step with the build for clangd.
+
+**Run** executes the current file: `python3` (from the project venv), `node` or
+`tsx`, `bash`, `nvim -l` for Lua, and for C/C++ a compile chained to the
+resulting binary with `&&`. Output goes to a terminal split that is reused
+across runs, with focus inside it so a program reading stdin is immediately
+usable. Pressing `<leader>br` again from inside that terminal re-runs the last
+command, rather than complaining that a terminal has no filetype.
+
+`:Build <cmd>`, `:BuildStop` and `:Run` are the command-line equivalents.
+
+## C/C++ project setup
+
+clangd needs a `compile_commands.json` — the record of how each file is actually
+compiled, with its `-I` paths, `-D` defines and language standard. Without one
+it has to guess, and the guess fails in the most visible way possible: every
+project header reports as "file not found", so completion, go-to-definition and
+diagnostics all quietly degrade at once.
+
+Neither cmake nor make writes that file by default. `:CompileCommands` picks the
+right way to produce it for the current project and restarts clangd:
+
+| Project | What it does |
+| :--- | :--- |
+| CMake | Re-runs cmake with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then symlinks `build/compile_commands.json` to the project root |
+| Makefile | Runs `bear -- make -B` to observe a full rebuild and record every compile |
+| Anything else | Writes a `.clangd` with fallback include paths and `-std=c++20` |
+
+`:CompileCommands!` skips detection and writes the `.clangd` fallback directly.
+`<leader>lg` is the same thing on a key. A symlink is used rather than a copy so
+it stays correct as the build directory is regenerated.
+
+Until a real database exists, clangd falls back to `-std=c++20 -Wall -Wextra`
+(set in `lua/plugins/lsp.lua`), which is enough to keep a scratch file usable.
+
+Other C/C++ specifics:
+
+- `gf` on an `#include` works — `include/`, `inc/`, `src/` and `lib/` under the project root are added to `path`, along with the system include directories.
+- `K` is LSP hover; `<leader>K` opens the man page for the word under the cursor, trying section 3 then 2. Two different questions, two different keys.
+- `<leader>lh` switches between source and header (a clangd extension).
+- Comments default to `//` rather than `/* */`, so `gcc`/`gc` can comment out a region containing a block comment.
+- Background indexing is limited to half the available cores at low priority; on a large tree, indexing on all cores makes the editor unusable while it runs.
+
+## Python virtualenvs
+
+pyright and debugpy both default to whatever `python3` is first on `$PATH`,
+which is almost never the interpreter a project's dependencies are installed
+into. The failure is quiet rather than loud: imports resolve as missing, types
+degrade to `Unknown`, and the debugger runs the wrong interpreter.
+
+`lua/config/venv.lua` walks up from the project root looking for `.venv`,
+`venv`, `.env` or `env` (an activated `$VIRTUAL_ENV` wins over all of them) and
+feeds the result to pyright, debugpy, neotest's pytest runner, and `<leader>br`.
+No plugin, no `fd`, nothing to configure — so it behaves identically on the
+air-gapped hosts.
+
+## The project root
+
+Builds, `:CompileCommands`, the debugger's executable picker, `<leader>Ta`, the
+C/C++ `path`, and virtualenv lookup all need to know where the current project
+starts, and they all ask `lua/config/project.lua` — one marker list, so they
+cannot disagree with each other:
+
+```text
+compile_commands.json, CMakeLists.txt, Makefile, makefile,
+package.json, Cargo.toml, pyproject.toml, setup.py, .git
+```
+
+The search walks **up from the file you are editing**, not from the directory
+Neovim was started in, and stops at the first ancestor containing any marker
+(`:help vim.fs.root`). In a monorepo that means `services/api/main.py` gets
+`services/api`, and the cwd is only used when nothing matches. Editing a file
+outside the current project therefore builds, debugs and tests the project that
+file belongs to.
+
+## Project-local configuration
+
+`exrc` is enabled, so Neovim reads a `.nvim.lua` from the directory it was
+started in. Neovim 0.11+ asks once per file before running it and remembers the
+answer, so an untrusted repo cannot execute anything silently.
+
+```lua
+-- .nvim.lua in a project root
+vim.g.build_cmd = "ninja -C out/debug"        -- overrides <leader>bb detection
+vim.g.run_cmd   = "./out/debug/server --config dev.toml"
+vim.g.gdb_path  = "/opt/toolchain/bin/arm-none-eabi-gdb"  -- used by the DAP configs
+```
+
+Debug configurations can also come from a `.vscode/launch.json`, which nvim-dap
+reads automatically.
+
 ## Formatting
 
 Formatting is handled by [conform.nvim](https://github.com/stevearc/conform.nvim) and is **manual** — there is no format-on-save. Format the current buffer with `<leader>lf`.
 
+`:FormatOnSave` toggles automatic formatting for the session, for projects with
+a CI formatting gate where forgetting once costs a round trip.
+
 | Filetype | Formatter |
 | :--- | :--- |
 | C / C++ | `clang-format` |
+| CMake | `cmake-format` |
 | Python | `black`, `isort` |
-| JS / TS / HTML / CSS / JSON / YAML | `prettier` |
+| JS / TS / HTML / CSS / JSON / YAML / Markdown | `prettier` |
 | Lua | `stylua` |
 | Shell | `shfmt` |
 
@@ -363,6 +653,39 @@ formatters actually emit, so hand-written and formatted code agree. Both
 ### C/C++ style
 
 The default C/C++ style lives in `lua/plugins/formatting.lua` (not in a global `~/.clang-format`): **K&R braces, 4-space indent, 120-column limit**. If a project provides its own `.clang-format`, conform detects it and uses that file instead (`--style=file`) — so per-project overrides just work by adding a `.clang-format` to the project.
+
+## Linting
+
+Each language is linted by exactly one thing, and wherever possible that thing
+is its language server — because a server can offer a **quick fix** for what it
+reports, which a standalone linter cannot.
+
+| Language | Linter | Runs as |
+| :--- | :--- | :--- |
+| C / C++ | clang-tidy | inside clangd |
+| Python | ruff | LSP server |
+| Shell | shellcheck | spawned by bashls |
+| JS / TS | eslint | LSP server (`<leader>a` → "fix all auto-fixable problems") |
+| Markdown | markdownlint | nvim-lint |
+| YAML | yamllint | nvim-lint |
+
+Only the last two have no language server, which is the entire reason
+`nvim-lint` is still installed. The eslint server attaches only where an eslint
+config exists, so projects without one see nothing.
+
+Both of those two are toned down, because their stock rules duplicate the
+formatter and drown out everything else — markdownlint's default put 58
+line-length errors on this README, yamllint's put 5 on the workflow file in this
+repo. prettier owns the layout of both filetypes and will not rewrap prose, so
+line-length (`MD013`, `line-length`), `document-start` and the `truthy` reading
+of GitHub Actions' `on:` key are switched off. Everything a formatter cannot
+fix — unlabelled code fences, duplicate keys, bad indentation, syntax errors —
+still reports.
+
+A project that ships its own `.markdownlint.*` or `.yamllint*` takes over
+completely, the same way a project `.clang-format` does. The file is located by
+walking up from the buffer, so it is found even when Neovim was started outside
+the project.
 
 ## Plugins
 
@@ -382,9 +705,13 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `folke/todo-comments.nvim` | TODO/FIXME highlighting |
 | `nvim-treesitter/nvim-treesitter` | Syntax highlighting and folding (C, C++, Python, JS, TS, ASM, …) |
 | `nvim-treesitter/nvim-treesitter-context` | Sticky function/class context |
+| `nvim-treesitter/nvim-treesitter-textobjects` | Function/class/parameter text objects, movement, swapping |
+| `andymass/vim-matchup` | `%` over `#if`/`#endif`, `if`/`end`, `do`/`done`, HTML tags |
 | `windwp/nvim-autopairs` | Auto-close brackets and quotes |
 | `RRethy/vim-illuminate` | Highlights all uses of the word under cursor |
 | `kylechui/nvim-surround` | Surround motions |
+| `danymat/neogen` | Doc comment generation (doxygen, docstrings, JSDoc, LDoc) |
+| `mbbill/undotree` | Undo history browser |
 | `nvim-tree/nvim-tree.lua` | File explorer |
 | `stevearc/aerial.nvim` | LSP-powered symbols outline |
 | `nvim-telescope/telescope.nvim` | Fuzzy finder |
@@ -393,11 +720,13 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `mason-org/mason-lspconfig.nvim` | Bridges Mason with native `vim.lsp` config (Neovim 0.11+) |
 | `saghen/blink.cmp` | Completion engine (built-in snippets, cmdline completion, auto-brackets) |
 | `b0o/schemastore.nvim` | JSON schema catalog for jsonls |
-| `stevearc/conform.nvim` | Formatting — clang-format (C/C++), prettier, black/isort, stylua, shfmt |
-| `mfussenegger/nvim-lint` | Linting (eslint_d); ruff and shellcheck run as/inside LSP servers |
+| `stevearc/conform.nvim` | Formatting — clang-format (C/C++), cmake-format, prettier, black/isort, stylua, shfmt |
+| `mfussenegger/nvim-lint` | Linting for markdown and yaml; every other language is linted by its LSP |
 | `mfussenegger/nvim-dap` | Debug adapter protocol |
 | `rcarriga/nvim-dap-ui` | Debug UI |
 | `mfussenegger/nvim-dap-python` | Python debug adapter (debugpy) |
+| `nvim-neotest/neotest` | Test runner UI, quickfix integration, debug-a-test |
+| `neotest-python` / `-jest` / `-vitest` / `-gtest` | Framework adapters (pytest, jest, vitest, gtest) |
 | `codelldb` / `cpptools` (Mason) | C/C++ debug adapters — LLDB (local macOS) and gdb/gdbserver (Linux) |
 | `js-debug-adapter` (Mason) | JavaScript / TypeScript debug adapter |
 | `bash-debug-adapter` (Mason) | Bash debug adapter (bashdb; needs bash >= 4) |
