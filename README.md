@@ -10,6 +10,7 @@ A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Use
 - [File Structure](#file-structure)
 - [Key Mappings](#key-mappings)
 - [Building and running](#building-and-running)
+- [CMake projects](#cmake-projects)
 - [C/C++ project setup](#cc-project-setup)
 - [Python virtualenvs](#python-virtualenvs)
 - [The project root](#the-project-root)
@@ -27,7 +28,7 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 
 ## Prerequisites
 
-- **Neovim** >= 0.11.0 (0.12.x recommended) — native `vim.lsp` config requires 0.11+
+- **Neovim** >= 0.12.0 — native `vim.lsp` config needs 0.11+, and CodeLens (`vim.lsp.codelens.enable`) needs the 0.12 rewrite
 - **Git**
 - **ripgrep** — live grep in Telescope, and the search engine behind grug-far
 - **make** — required to build the telescope-fzf-native extension
@@ -41,7 +42,7 @@ This downloads and runs `setup.sh`, which checks your dependencies, backs up any
 
 Optional, per workflow:
 
-- **cmake** — for CMake projects; `:CompileCommands` and `<leader>bb` both drive it
+- **cmake >= 3.14** — for CMake projects; `:CompileCommands` and `<leader>bb` both drive it, and target/preset selection reads its file API (see [CMake projects](#cmake-projects))
 - **bear** — records compile flags from a `make` build so clangd can read them (`:CompileCommands`). Only needed for Makefile projects; CMake exports the same data itself. EPEL ships it on EL8 (`dnf install bear`), Homebrew on macOS.
 - **pytest / jest / vitest / gtest** — installed per project, not globally; `<leader>Tr` runs whichever the project uses
 
@@ -52,10 +53,11 @@ Optional, per workflow:
 - **blink.cmp** downloads a prebuilt Rust fuzzy matcher; if it's incompatible with the system (e.g. old glibc), it falls back to the Lua matcher with a warning — completion keeps working.
 - **Language standard for single-file builds** is probed, not assumed. EL8 ships gcc 8.5, which predates `-std=c++20` entirely; `<leader>bb` asks the compiler what it accepts (newest first, `c++20 → c++17 → c++14`) and caches the answer. macOS clang gets c++20, Rocky 8 gets c++17, neither needs configuring. Single-file **C++** builds additionally need `gcc-c++` installed, which the base `gcc` package does not pull in.
 - **`bear`** changed its CLI between versions 2 and 3 (version 3 requires a `--` separator before the build command, version 2 rejects it). `:CompileCommands` checks the installed version and uses the matching form.
-- **cmake >= 3.13** is required for the `cmake -S . -B build` form used by `<leader>bb` and `:CompileCommands`. RHEL/Rocky 8.2+ ship 3.20 or newer; only an unpatched 8.0 install (cmake 3.11) is too old.
+- **cmake >= 3.14** is required by `<leader>bb` and `:CompileCommands`: 3.13 for the `-S . -B build` form, and 3.14 for the file API that target and preset selection read. RHEL/Rocky 8.2+ ship 3.20 or newer, which also covers `CMakePresets.json` (3.19+); only an unpatched 8.0 install (cmake 3.11) is too old.
 - **`<leader>K`** needs `man-pages` and `man-db`, which minimal RHEL/Rocky installs omit. Without them it reports "no man page" and nothing else changes.
 - **Deliberately excluded** because their upstream binaries need a newer glibc than EL8 provides: `asm_lsp` and `neocmakelsp`. Anything that would work on the Mac but not the RHEL boxes does not go in `lua/config/servers.lua`.
-- `setup.sh` (install/health) checks all of the above per platform.
+- **stylua is pinned to 2.0.2** in `lua/config/tools.lua`. Its Linux release is a glibc build, and from 2.3.0 on it is linked against `GLIBC_2.34`; 2.0.2 is the newest release that still runs on EL8's 2.28. Every other bundled binary was checked against the same floor — clangd (2.18), lua-language-server (2.17), codelldb and liblldb (2.18), cpptools (2.16), and the bundled Node 22 (2.28 exactly) all clear it, and ruff, shellcheck, shfmt and stylua's musl variant are static. `rpm/build-rpm.sh` re-checks the whole payload with `ldd` at bake time so a future release that raises its floor fails the build instead of the user.
+- `setup.sh` (install/health) checks all of the above per platform. For `cmake` and the `tree-sitter` CLI it checks the **version**, not just presence — both are tools that install cleanly and then fail at a specific feature (cmake 3.11 configures a project fine and then reports no targets), which is a far quieter failure than a missing binary.
 
 Everything else added for building, testing and editing is either pure Lua/Vimscript
 (no binaries at all) or runs on the two runtimes the RPM already bundles — Node
@@ -85,7 +87,7 @@ chmod +x setup.sh
 | `./setup.sh update` | Pull latest config and sync plugins + Mason packages |
 | `./setup.sh remove` | Remove the config (with optional plugin data wipe) |
 | `./setup.sh status` | Show install info and check for upstream updates |
-| `./setup.sh health` | Check tool availability and run `:checkhealth` |
+| `./setup.sh health` | Check tool availability (and version, where it matters) and run `:checkhealth` |
 | `./setup.sh backup` | Snapshot current config to a timestamped backup |
 | `./setup.sh restore` | Restore a previous backup |
 
@@ -170,9 +172,10 @@ lua/
     options.lua             # Core Neovim options
     keymaps.lua             # Global key mappings
     autocmds.lua            # Autocommands (whitespace trim, yank highlight, etc.)
-    commands.lua            # User commands (:Build, :Run, :CompileCommands, :FormatOnSave)
+    commands.lua            # User commands (:Build, :Run, :CMake*, :CompileCommands, :FormatOnSave)
     project.lua             # Project root detection — one marker list, shared by everything below
     build.lua               # Build/run detection, async compile into the quickfix list
+    cmake.lua               # CMake build type / target / preset, and target discovery via the file API
     compiledb.lua           # compile_commands.json generation for clangd
     venv.lua                # Python virtualenv resolution (pyright + debugpy + :Run)
     cfamily.lua             # Buffer-local C/C++ setup (include path, man pages)
@@ -345,10 +348,16 @@ everything else keeps its upstream default (see `g?`).
 | :--- | :--- |
 | `<leader>bb` | Build the project (async, errors to quickfix) |
 | `<leader>br` | Run the current file in a terminal split |
+| `<leader>bd` | Build, then start debugging on success |
 | `<leader>bc` | Build with a custom command (prefilled with the detected one) |
 | `<leader>bk` | Stop the running build |
+| `<leader>bt` | CMake: choose the build type (Debug / RelWithDebInfo / Release / MinSizeRel) |
+| `<leader>bT` | CMake: choose which target to build |
+| `<leader>bp` | CMake: choose a configure preset from `CMakePresets.json` |
+| `<leader>bi` | CMake: show the active build type, target and build directory |
 
-See [Building and running](#building-and-running) for what gets detected.
+See [Building and running](#building-and-running) for what gets detected, and
+[CMake projects](#cmake-projects) for the build type / target / preset model.
 
 ### LSP
 
@@ -368,6 +377,7 @@ See [Building and running](#building-and-running) for what gets detected.
 | `<leader>li` | Toggle inlay hints |
 | `<leader>ld` | Generate a doc comment for the symbol below (neogen) |
 | `<leader>lI` / `<leader>lO` | Incoming / outgoing calls (call hierarchy) |
+| `<leader>lb` / `<leader>lB` | Base / derived types (type hierarchy) |
 | `<leader>lh` | Switch source/header (C/C++, clangd) |
 | `<leader>lg` | Generate `compile_commands.json` (C/C++) |
 | `<leader>K` | Man page for the word under the cursor (C/C++) |
@@ -377,14 +387,22 @@ See [Building and running](#building-and-running) for what gets detected.
 
 `gr` finds every textual reference; `<leader>lI` answers the narrower question
 of what actually *calls* this, which is the one that matters when a name like
-`init` has two hundred references. `<leader>ld` writes the comment skeleton in
-each language's own convention — doxygen for C/C++, google-style docstrings for
-Python, JSDoc for JS/TS, LDoc for Lua.
+`init` has two hundred references. `<leader>lb`/`<leader>lB` answer the third
+version of the question — what this type derives from, and what derives from it
+— which in C++ is usually the one you actually want. `<leader>ld` writes the
+comment skeleton in each language's own convention — doxygen for C/C++,
+google-style docstrings for Python, JSDoc for JS/TS, LDoc for Lua.
 
-Neovim 0.11+ ships its own `gr`-prefixed LSP mappings (`grr`, `grn`, `gra`,
-`gri`, `grt`). Every one of them is rebound above, so the config deletes them —
-otherwise `gr` would be a prefix of a live mapping and each press would stall
-for `timeoutlen` (500 ms) waiting for a second key.
+`<leader>a` and `<leader>re` work in visual mode as well as normal. That is not
+cosmetic: a code action over a *range* is how clangd offers "extract function"
+and "extract variable", and neither is reachable from a normal-mode cursor.
+
+Neovim ships its own `gr`-prefixed LSP mappings (`grr`, `grn`, `gra`, `gri`,
+`grt`, and `grx` as of 0.12). Every one of them is rebound above, so the config
+deletes them — otherwise `gr` would be a prefix of a live mapping and each press
+would stall for `timeoutlen` (500 ms) waiting for a second key. `grx` is worth
+calling out: it arrived with the 0.12 CodeLens rewrite, so upgrading Neovim
+silently reintroduced that stall until it was added to the deletion list.
 
 `<leader>lf` is a global mapping rather than an LSP one, so filetypes with a
 formatter but no language server (yaml, scss, markdown) can still be formatted.
@@ -416,13 +434,26 @@ The same keys drive every configured language: C/C++ (codelldb / gdb), Python
 | `<leader>dt` | Terminate session |
 | `<leader>dC` | Clear all breakpoints |
 
-**Picking what to debug.** The C/C++ launch configurations no longer ask you to
-type a path. They scan `build/`, `bin/`, `out/`, `cmake-build-*/` and
-`target/debug/` for executables and offer them **newest first**, since the
-binary you just rebuilt is nearly always the one you want; the last choice for
-a project is remembered and floated to the top. "Enter a path manually…" is
-always the final entry. Each language also has a "with arguments" variant that
-prompts for argv, so the common case stays a single keypress.
+**Picking what to debug.** The C/C++ launch configurations never ask you to type
+a path.
+
+In a configured **CMake** project the list comes from CMake itself — the file
+API reports which targets are executables and where each one's binary lands —
+with the currently selected build target (`<leader>bT`) first. That beats
+guessing: a filesystem sweep cannot tell a test fixture from the program, and it
+happily offers stale binaries from a build directory that was renamed rather
+than deleted.
+
+Anything CMake does not account for — a hand-built binary, a Makefile or Cargo
+project — still comes from the original scan of `build/`, `bin/`, `out/`,
+`cmake-build-*/` and `target/debug/`, offered **newest first** since the binary
+you just rebuilt is nearly always the one you want. Either way the last choice
+for a project is remembered and floated to the top, and "Enter a path manually…"
+is always the final entry. Each language also has a "with arguments" variant
+that prompts for argv, so the common case stays a single keypress.
+
+`<leader>bd` builds first and then starts the debugger, which is the pairing that
+avoids stepping through source that no longer matches the binary.
 
 **Language notes.**
 
@@ -523,7 +554,7 @@ setup, and both are implemented in `lua/config/build.lua`.
 
 | Marker | Command |
 | :--- | :--- |
-| `CMakeLists.txt` | `cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build` |
+| `CMakeLists.txt` | `cmake` configure + build for the active profile — see [CMake projects](#cmake-projects) |
 | `Makefile` | `make` |
 | `Cargo.toml` | `cargo build` |
 | `package.json` | `npm run build` |
@@ -538,6 +569,52 @@ warnings. `<leader>bk` stops a build in progress.
 The CMake line configures every time, which is a no-op once the cache exists.
 That is deliberate: a fresh clone builds on the first `<leader>bb`, and
 `compile_commands.json` stays in step with the build for clangd.
+
+## CMake projects
+
+CMake gets more than a fixed command line, because a fixed command line gets one
+important thing wrong. `cmake -S . -B build && cmake --build build` configures
+with **no** `CMAKE_BUILD_TYPE`, and on a single-config generator that leaves the
+per-configuration flags empty — so the compiler runs without `-g` and the binary
+carries no debug information at all. Breakpoints then never bind, which looks
+like a broken debugger rather than a wrong build. Every IDE defaults to a Debug
+configuration for this reason, and so does this config.
+
+| Key | Command | What it sets |
+| :--- | :--- | :--- |
+| `<leader>bt` | `:CMakeBuildType [type]` | Debug (default), RelWithDebInfo, Release, MinSizeRel |
+| `<leader>bT` | `:CMakeTarget [name]` | Build one target instead of everything (`all` clears it) |
+| `<leader>bp` | `:CMakePreset` | A configure preset from `CMakePresets.json` |
+| `<leader>bi` | `:CMakeStatus` | Shows the active profile and build directory |
+
+Each choice is remembered **per project root** and persists across restarts
+(`stdpath('state')/cmake-profiles.json`), so it is a rare trip rather than
+something to set every session.
+
+**Presets win when present.** `CMakePresets.json` is how a modern C++ project
+shares one configuration between CI, the command line and every editor, so
+selecting a preset hands it the build directory, the generator and the cache
+variables; the build type above then no longer applies. Preset names come from
+`cmake --list-presets`, so `hidden` presets and unmet `condition` blocks are
+filtered out by CMake itself rather than by a second-guessing parser here.
+
+**Targets come from the CMake file API**, not from parsing `--target help` —
+that target does not exist under Ninja, and it cannot report where a target's
+output lands. The file API does, which is what makes the debugger useful:
+`<F5>` offers the executables CMake says the project produces, with the selected
+target first, instead of sweeping the filesystem for anything executable. The
+old scan is still there as the fallback for non-CMake projects and hand-built
+binaries.
+
+`<leader>bd` builds and then starts the debugger on success — the single
+keypress an IDE's Debug button is. Debugging a binary you forgot to rebuild is
+the classic way to lose ten minutes single-stepping through source that no
+longer matches the machine code.
+
+Multi-config generators (Ninja Multi-Config, Visual Studio) are handled too:
+they choose the configuration at build time, so the config passes `--config`
+instead of `CMAKE_BUILD_TYPE`, detected from `CMAKE_CONFIGURATION_TYPES` in the
+cache.
 
 **Run** executes the current file: `python3` (from the project venv), `node` or
 `tsx`, `bash`, `nvim -l` for Lua, and for C/C++ a compile chained to the
@@ -561,16 +638,34 @@ right way to produce it for the current project and restarts clangd:
 
 | Project | What it does |
 | :--- | :--- |
-| CMake | Re-runs cmake with `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then symlinks `build/compile_commands.json` to the project root |
+| CMake | Runs the same configure `<leader>bb` uses (so the two never fight over the cache), then symlinks `compile_commands.json` from the build directory to the project root |
 | Makefile | Runs `bear -- make -B` to observe a full rebuild and record every compile |
-| Anything else | Writes a `.clangd` with fallback include paths and `-std=c++20` |
+| Anything else | Writes a `.clangd` with fallback include paths and a language standard **probed from the compiler** |
 
 `:CompileCommands!` skips detection and writes the `.clangd` fallback directly.
 `<leader>lg` is the same thing on a key. A symlink is used rather than a copy so
 it stays correct as the build directory is regenerated.
 
-Until a real database exists, clangd falls back to `-std=c++20 -Wall -Wextra`
-(set in `lua/plugins/lsp.lua`), which is enough to keep a scratch file usable.
+The generated `.clangd` scopes its `-std` by file extension, using `If:
+PathMatch:` fragments. A bare `CompileFlags.Add` reaches every file the server
+opens, C and C++ alike, so a project-wide `-std=c++20` puts `Invalid argument
+'-std=c++20' not allowed with 'C'` on line 1 of every `.c` in the tree. For the
+same reason the built-in fallback in `lua/plugins/lsp.lua` is only `-Wall
+-Wextra`, with no `-std` at all — one clangd process serves both languages.
+
+**Cross-compiling?** clangd finds a toolchain's system headers by *running* the
+compiler named in `compile_commands.json`, but only for drivers allow-listed
+with `--query-driver`, which is empty by default. Point it at an ARM or vendor
+GCC build without that and every `#include <...>` reports as missing while the
+same tree compiles cleanly — the most confusing clangd failure in embedded work.
+Set it per project (see [Project-local configuration](#project-local-configuration)):
+
+```lua
+vim.g.clangd_query_driver = "/opt/toolchains/**/arm-none-eabi-*"
+```
+
+`$CLANGD_QUERY_DRIVER` works too. It is a comma-separated glob list and it
+executes whatever it matches, so keep it as narrow as the toolchain needs.
 
 Other C/C++ specifics:
 
@@ -623,7 +718,12 @@ answer, so an untrusted repo cannot execute anything silently.
 vim.g.build_cmd = "ninja -C out/debug"        -- overrides <leader>bb detection
 vim.g.run_cmd   = "./out/debug/server --config dev.toml"
 vim.g.gdb_path  = "/opt/toolchain/bin/arm-none-eabi-gdb"  -- used by the DAP configs
+vim.g.clangd_query_driver = "/opt/toolchain/bin/arm-none-eabi-*"  -- see C/C++ setup
 ```
+
+`.nvim.lua` is sourced before the first buffer is read, so settings the LSP
+configuration consults — `clangd_query_driver` among them — are in place by the
+time the server starts.
 
 Debug configurations can also come from a `.vscode/launch.json`, which nvim-dap
 reads automatically.

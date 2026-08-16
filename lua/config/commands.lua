@@ -16,6 +16,48 @@ command("Run", function()
   require("config.build").run()
 end, { desc = "Run the current file in a terminal split" })
 
+-- ── CMake ─────────────────────────────────────────────────────────────────────
+-- The pickers are on <leader>bt / bT / bp; these are the same thing by name,
+-- plus the argument form a script or a mapping can call directly.
+command("CMakeBuildType", function(opts)
+  local cmake = require("config.cmake")
+  if opts.args == "" then return cmake.select_build_type() end
+  if not vim.tbl_contains(cmake.BUILD_TYPES, opts.args) then
+    vim.notify("Unknown build type: " .. opts.args .. " (expected one of "
+      .. table.concat(cmake.BUILD_TYPES, ", ") .. ")", vim.log.levels.ERROR)
+    return
+  end
+  cmake.set("build_type", opts.args)
+  vim.notify("CMake build type: " .. opts.args .. " (rebuild to apply)")
+end, {
+  nargs = "?",
+  desc = "Set the CMake build type (bare form opens a picker)",
+  complete = function() return require("config.cmake").BUILD_TYPES end,
+})
+
+command("CMakeTarget", function(opts)
+  local cmake = require("config.cmake")
+  if opts.args == "" then return cmake.select_target() end
+  cmake.set("target", opts.args ~= "all" and opts.args or nil)
+  vim.notify("CMake target: " .. opts.args)
+end, {
+  nargs = "?",
+  desc = "Set the CMake target to build ('all' clears it)",
+  complete = function()
+    local names = { "all" }
+    for _, t in ipairs(require("config.cmake").targets()) do table.insert(names, t.name) end
+    return names
+  end,
+})
+
+command("CMakePreset", function()
+  require("config.cmake").select_preset()
+end, { desc = "Choose a CMake configure preset" })
+
+command("CMakeStatus", function()
+  vim.notify(require("config.cmake").status(), vim.log.levels.INFO, { title = "CMake" })
+end, { desc = "Show the active CMake build type, target and build directory" })
+
 -- ── C/C++ ─────────────────────────────────────────────────────────────────────
 command("CompileCommands", function(opts)
   local db = require("config.compiledb")

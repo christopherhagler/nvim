@@ -176,7 +176,7 @@ return {
       local wk = require("which-key")
       wk.setup({})
       wk.add({
-        { "<leader>b", group = "Build/Run" },
+        { "<leader>b", group = "Build/Run/CMake" },
         { "<leader>c", group = "Claude" },
         { "<leader>d", group = "Debug" },
         { "<leader>f", group = "Find" },

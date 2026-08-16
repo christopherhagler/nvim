@@ -84,13 +84,20 @@ return {
         automatic_enable = servers,
       })
 
-      -- Neovim 0.11+ ships gr-prefixed LSP defaults (grr/grn/gra/gri/grt).
-      -- We rebind all of them below (gr, <leader>rn, <leader>a, gi, gy), and
-      -- leaving them in place would make every `gr` press wait out 'timeoutlen'
-      -- to see whether a second key follows.
-      for _, lhs in ipairs({ "grr", "grn", "gra", "gri", "grt" }) do
+      -- Neovim ships gr-prefixed LSP defaults, and we rebind every one of them
+      -- below (gr, <leader>rn, <leader>a, gi, gy). Leaving any in place makes
+      -- every `gr` press wait out 'timeoutlen' to see whether a second key
+      -- follows — half a second of dead air on the most-used LSP mapping there
+      -- is.
+      --
+      -- grx is the trap: 0.11 shipped grr/grn/gra/gri/grt, and 0.12 added grx
+      -- (vim.lsp.codelens.run) with the codeLens rewrite. Upgrading silently
+      -- reintroduced the stall this loop exists to prevent. `gra` is also
+      -- mapped in Visual mode, where <leader>a now covers the same ground.
+      for _, lhs in ipairs({ "grr", "grn", "gra", "gri", "grt", "grx" }) do
         pcall(vim.keymap.del, "n", lhs)
       end
+      pcall(vim.keymap.del, "x", "gra")
 
       -- Diagnostic appearance
       vim.diagnostic.config({
@@ -123,8 +130,8 @@ return {
         callback = function(ev)
           local client = assert(vim.lsp.get_client_by_id(ev.data.client_id))
           local bufnr = ev.buf
-          local map = function(keys, func, desc)
-            vim.keymap.set("n", keys, func, { buffer = bufnr, desc = "LSP: " .. desc })
+          local map = function(keys, func, desc, mode)
+            vim.keymap.set(mode or "n", keys, func, { buffer = bufnr, desc = "LSP: " .. desc })
           end
 
           -- ruff and pyright both attach to Python buffers. ruff owns linting
@@ -143,10 +150,15 @@ return {
 
           -- Actions
           map("<leader>rn", vim.lsp.buf.rename, "Rename symbol")
-          map("<leader>a",  vim.lsp.buf.code_action, "Code actions")
+          -- Visual mode as well as normal: a code action over a *range* is how
+          -- clangd offers "extract function" and "extract variable", which are
+          -- the two refactorings that only make sense on a selection. Without
+          -- the visual binding they were unreachable except through the stock
+          -- `gra` that the block above deletes.
+          map("<leader>a", vim.lsp.buf.code_action, "Code actions", { "n", "v" })
           map("<leader>re", function()
             vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
-          end, "Refactor")
+          end, "Refactor", { "n", "v" })
           map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
 
           -- Call hierarchy: "who calls this?" / "what does this call?".
@@ -155,6 +167,14 @@ return {
           -- `init` has 200 references and four of them are calls.
           map("<leader>lI", function() require("telescope.builtin").lsp_incoming_calls() end, "Incoming calls")
           map("<leader>lO", function() require("telescope.builtin").lsp_outgoing_calls() end, "Outgoing calls")
+
+          -- Type hierarchy: the class-tree half of the same question. "What
+          -- derives from this interface" is answered by neither gr (textual)
+          -- nor the call hierarchy, and in C++ it is usually the one you want.
+          if client:supports_method("textDocument/typeHierarchy") then
+            map("<leader>lb", function() vim.lsp.buf.typehierarchy("supertypes") end, "Base types")
+            map("<leader>lB", function() vim.lsp.buf.typehierarchy("subtypes") end, "Derived types")
+          end
           -- <leader>lf (format) is global — see lua/config/keymaps.lua. conform
           -- formats plenty of filetypes that have no LSP server attached.
 
@@ -204,25 +224,46 @@ return {
       })
 
       -- Per-server overrides
+      --
+      -- Cross-compilation: clangd learns a toolchain's system header paths by
+      -- *running* the compiler named in compile_commands.json, but only for
+      -- drivers matched by --query-driver, which is empty by default. Point an
+      -- ARM or vendor GCC build at clangd without it and every #include <...>
+      -- reports "file not found" while the same tree compiles cleanly — the
+      -- single most confusing clangd failure in embedded work. Set it per
+      -- project from a .nvim.lua (sourced before the first buffer is read, so
+      -- it is in place by the time this runs):
+      --
+      --   vim.g.clangd_query_driver = "/opt/toolchains/**/arm-none-eabi-*"
+      --
+      -- It is a comma-separated glob list, and it executes what it matches, so
+      -- keep it as narrow as the toolchain actually needs.
+      local clangd_cmd = {
+        "clangd",
+        "--background-index",
+        -- Indexing every translation unit on all cores makes a large project
+        -- unresponsive while it runs. Half the cores keeps the editor usable.
+        "-j=" .. math.max(1, math.floor((vim.uv.available_parallelism() or 4) / 2)),
+        "--background-index-priority=low",
+        "--clang-tidy",
+        "--header-insertion=iwyu",
+        "--completion-style=detailed",
+        "--function-arg-placeholders=true",
+        -- Complete symbols that aren't visible yet and add the #include for
+        -- them — the main reason to prefer clangd over ctags in a big tree.
+        "--all-scopes-completion",
+        -- Preambles in RAM rather than /tmp: measurably faster completion,
+        -- and avoids filling a small /tmp on the RHEL boxes.
+        "--pch-storage=memory",
+      }
+
+      local query_driver = vim.g.clangd_query_driver or vim.env.CLANGD_QUERY_DRIVER
+      if query_driver then
+        table.insert(clangd_cmd, "--query-driver=" .. query_driver)
+      end
+
       vim.lsp.config("clangd", {
-        cmd = {
-          "clangd",
-          "--background-index",
-          -- Indexing every translation unit on all cores makes a large project
-          -- unresponsive while it runs. Half the cores keeps the editor usable.
-          "-j=" .. math.max(1, math.floor((vim.uv.available_parallelism() or 4) / 2)),
-          "--background-index-priority=low",
-          "--clang-tidy",
-          "--header-insertion=iwyu",
-          "--completion-style=detailed",
-          "--function-arg-placeholders=true",
-          -- Complete symbols that aren't visible yet and add the #include for
-          -- them — the main reason to prefer clangd over ctags in a big tree.
-          "--all-scopes-completion",
-          -- Preambles in RAM rather than /tmp: measurably faster completion,
-          -- and avoids filling a small /tmp on the RHEL boxes.
-          "--pch-storage=memory",
-        },
+        cmd = clangd_cmd,
         -- Without a compile_commands.json, clangd has to guess how each file is
         -- compiled and reports every project header as missing. These flags are
         -- the guess it uses until :CompileCommands generates the real thing

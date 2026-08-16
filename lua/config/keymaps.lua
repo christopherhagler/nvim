@@ -67,6 +67,26 @@ map("n", "<leader>bc", function()
     end)
 end, { desc = "Build with a custom command" })
 
+-- Build, then start debugging — the one keypress an IDE's "Debug" button is.
+-- Debugging a binary you forgot to rebuild is the classic way to spend ten
+-- minutes single-stepping through source that no longer matches the machine
+-- code, so the two belong together.
+map("n", "<leader>bd", function()
+  require("config.build").build(nil, function() require("dap").continue() end)
+end, { desc = "Build, then debug" })
+
+-- CMake configuration (lua/config/cmake.lua). Remembered per project, so this
+-- is a rare trip rather than something to set on every session.
+map("n", "<leader>bt", function() require("config.cmake").select_build_type() end,
+  { desc = "CMake: build type" })
+map("n", "<leader>bT", function() require("config.cmake").select_target() end,
+  { desc = "CMake: target" })
+map("n", "<leader>bp", function() require("config.cmake").select_preset() end,
+  { desc = "CMake: preset" })
+map("n", "<leader>bi", function()
+  vim.notify(require("config.cmake").status(), vim.log.levels.INFO, { title = "CMake" })
+end, { desc = "CMake: status (what <leader>bb would do)" })
+
 -- Format (global, not LSP-scoped: conform handles filetypes such as yaml and
 -- scss that have no language server attached). In visual mode conform detects
 -- the selection and formats only that range.

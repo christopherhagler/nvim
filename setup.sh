@@ -14,7 +14,23 @@ RAW_URL="https://raw.githubusercontent.com/christopherhagler/nvim/development/se
 NVIM_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
 NVIM_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nvim"
 NVIM_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/nvim"
-MIN_NVIM_VERSION="0.11.0"
+# 0.12, not 0.11: vim.lsp.codelens.enable() (lua/plugins/lsp.lua) landed with the
+# 0.12 codeLens rewrite, and on 0.11 it throws on every LSP attach. The offline
+# RPM builds v0.12.2 from source for the same reason (rpm/build-rpm.sh).
+MIN_NVIM_VERSION="0.12.0"
+
+# Tools where being on $PATH is not enough, because the config uses a feature
+# that arrived in a specific release. Everything else is a presence check.
+#
+#   cmake 3.14 — the file API, which lua/config/cmake.lua reads to list targets
+#                and their artifact paths (<leader>bT, and the executables <F5>
+#                offers). 3.13 would cover `cmake -S . -B build` alone.
+#                CMakePresets.json (<leader>bp) needs 3.19, but degrades to "no
+#                presets found" rather than breaking, so it is not the floor.
+#   tree-sitter 0.26 — nvim-treesitter's main branch drives the CLI to build
+#                parsers; older CLIs fail the generate step.
+MIN_CMAKE_VERSION="3.14"
+MIN_TREE_SITTER_VERSION="0.26"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -58,14 +74,66 @@ IS_PIPED=false
 ask() {
   # ask <prompt>  — echoes the answer. Reads from /dev/tty so it works inside a
   # pipe; `read -p` writes the prompt to stderr, so it survives $( ) capture.
-  local reply
-  read -rp "$1" reply </dev/tty
+  #
+  # With no controlling terminal (a non-interactive ssh command, a CI step)
+  # opening /dev/tty fails, and the bare version of this left the caller with
+  # two raw bash errors — "Device not configured" then "reply: unbound
+  # variable" — for what is really one understandable situation. Nothing
+  # destructive ran either way, because the failure came before the prompt was
+  # answered; this just says so.
+  local reply=""
+  # Redirect stderr *before* the input redirection: bash applies them left to
+  # right, so with the two the other way round the "Device not configured"
+  # message is printed before 2>/dev/null is in effect.
+  if ! : 2>/dev/null </dev/tty; then
+    die "This command asks for confirmation, so it needs an interactive terminal.
+        Run it directly in a terminal rather than through a pipe or a
+        non-interactive shell."
+  fi
+  read -rp "$1" reply </dev/tty || true
   printf '%s' "$reply"
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 version_gte() { printf '%s\n%s\n' "$2" "$1" | sort -V -C; }
 nvim_version() { nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; }
+
+# First version-looking token on the first line of `<cmd> --version`.
+# '|| true' throughout: several tools exit non-zero for --version, and grep
+# exits 1 when it matches nothing — either would abort the script under
+# 'set -euo pipefail'.
+tool_version() {
+  { "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1; } || true
+}
+
+# The minimum for a tool that has one, or nothing. A case statement rather than
+# an associative array: macOS ships bash 3.2, which has no declare -A.
+min_version_for() {
+  case "$1" in
+    cmake)       printf '%s' "$MIN_CMAKE_VERSION" ;;
+    tree-sitter) printf '%s' "$MIN_TREE_SITTER_VERSION" ;;
+    *)           printf '' ;;
+  esac
+}
+
+# check_min_version <cmd> <why> — warns if installed but too old.
+# A missing tool is not this function's business; the caller already reports it.
+check_min_version() {
+  local cmd="$1" why="$2" min ver
+  min=$(min_version_for "$cmd")
+  [ -n "$min" ] || return 0
+  command -v "$cmd" &>/dev/null || return 0
+  ver=$(tool_version "$cmd")
+  if [ -z "$ver" ]; then
+    warn "  $cmd: could not read a version (need >= $min — $why)"
+    return 1
+  fi
+  if ! version_gte "$ver" "$min"; then
+    warn "  $cmd $ver is too old — need >= $min ($why)"
+    return 1
+  fi
+  return 0
+}
 
 # bashdb (bash script debugging) needs bash >= 4; macOS /bin/bash is 3.2.
 # Prints the path of the first modern bash found, or nothing.
@@ -117,12 +185,23 @@ check_optional_deps() {
 
   local any_missing=0
   for item in "${items[@]}"; do
-    local cmd="${item%%:*}" label="${item##*:}"
+    # Split on the FIRST colon only: several labels below contain one of their
+    # own (":CompileCommands"), and the greedy ##*: form truncated those to the
+    # text after the *last* colon — so a missing cmake reported itself as
+    # "missing: CompileCommands)".
+    local cmd="${item%%:*}" label="${item#*:}"
     if ! command -v "$cmd" &>/dev/null; then
       warn "  missing: $label"
       any_missing=1
     fi
   done
+
+  # Installed but too old is its own failure mode, and a quieter one than
+  # missing: cmake 3.11 configures a project fine and then reports no targets.
+  check_min_version cmake \
+    "target and preset selection read the CMake file API" || any_missing=1
+  check_min_version tree-sitter \
+    "nvim-treesitter's main branch builds parsers with it" || any_missing=1
 
   # Any C compiler works: gcc on RHEL/Rocky, clang on macOS
   if ! command -v cc &>/dev/null && ! command -v gcc &>/dev/null && ! command -v clang &>/dev/null; then
@@ -296,8 +375,12 @@ cmd_health() {
   if [ -d "$NVIM_CONFIG_DIR" ]; then
     ok "Config: $NVIM_CONFIG_DIR"
     local count
-    count=$(find "${NVIM_DATA_DIR}/lazy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
-    ok "Plugins installed: ${count}"
+    # '|| true' for the same reason as the tool loop below: before the first
+    # plugin sync there is no lazy/ directory, find exits 1, and 'pipefail'
+    # propagates that through the pipeline — which under 'set -e' aborted the
+    # whole command mid-report. wc still prints 0, so the count stays right.
+    count=$(find "${NVIM_DATA_DIR}/lazy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ' || true)
+    ok "Plugins installed: ${count:-0}"
   else
     warn "No config at $NVIM_CONFIG_DIR — run 'install'"
   fi
@@ -313,14 +396,20 @@ cmd_health() {
   [ "$(uname -s)" = "Linux" ] && tools+=("gdb:gdb")
 
   for entry in "${tools[@]}"; do
-    local cmd="${entry%%:*}" label="${entry##*:}"
+    # First colon only, as in check_optional_deps above
+    local cmd="${entry%%:*}" label="${entry#*:}"
     if command -v "$cmd" &>/dev/null; then
       # '|| true' is load-bearing under 'set -euo pipefail': several of these
       # tools exit non-zero for --version (unzip returns 10) and grep exits 1
       # when a version string can't be found. Either one aborted the whole
       # health report mid-list, silently — everything after unzip never printed.
       local ver; ver=$("$cmd" --version 2>/dev/null | head -1 | grep -oE '[0-9][0-9.]+' | head -1) || true
-      ok "  ${label}${ver:+ (${ver})}"
+      local min; min=$(min_version_for "$cmd")
+      if [ -n "$min" ] && [ -n "$ver" ] && ! version_gte "$ver" "$min"; then
+        warn "  ${label} (${ver}) — too old, need >= ${min}"
+      else
+        ok "  ${label}${ver:+ (${ver})}${min:+ [min ${min}]}"
+      fi
     else
       warn "  ${label} — not found"
     fi
@@ -427,8 +516,10 @@ cmd_status() {
   ok "Neovim:   $(nvim_version 2>/dev/null || echo 'not found')"
 
   local count
-  count=$(find "${NVIM_DATA_DIR}/lazy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
-  ok "Plugins:  ${count} installed"
+  # '|| true': no lazy/ directory before the first sync, and pipefail would
+  # otherwise abort the report here (see cmd_health)
+  count=$(find "${NVIM_DATA_DIR}/lazy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ' || true)
+  ok "Plugins:  ${count:-0} installed"
 
   git -C "$NVIM_CONFIG_DIR" fetch --quiet 2>/dev/null || true
   local behind

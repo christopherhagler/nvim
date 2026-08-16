@@ -155,8 +155,12 @@ function M.generate()
       notify("CMakeLists.txt found but cmake is not installed", vim.log.levels.ERROR)
       return
     end
-    local build = root .. "/build"
-    run({ "cmake", "-S", root, "-B", build, "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON" }, root, function()
+    -- Same configure line <leader>bb uses (lua/config/cmake.lua). Two different
+    -- invocations would mean two different CMAKE_BUILD_TYPE values landing in
+    -- one cache, and each would force a full reconfigure of the other's work.
+    local cmake = require("config.cmake")
+    local build = cmake.binary_dir(root)
+    run(cmake.configure_argv(root), root, function()
       link_to_root(root, build)
       notify("compile_commands.json generated (cmake)")
       restart_clangd()

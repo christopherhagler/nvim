@@ -197,7 +197,31 @@ return {
       -- (vim.ui.select) usable where a blocking prompt used to be.
       local function pick_executable()
         local root = require("config.project").root()
-        local candidates = find_executables(root)
+
+        -- A configured CMake project already knows exactly which executables it
+        -- produces and where they land, so ask it rather than sweeping the
+        -- filesystem: the scan below cannot tell a test fixture from the
+        -- program, and it picks up stale binaries from build directories that
+        -- were renamed rather than removed. The selected build target comes
+        -- first — after a build, that is nearly always what you meant.
+        local cmake = require("config.cmake")
+        local candidates, seen = {}, {}
+        if cmake.is_cmake(root) then
+          local selected = cmake.profile(root).target
+          for _, target in ipairs(cmake.executables(root)) do
+            seen[target.path] = true
+            if target.name == selected then
+              table.insert(candidates, 1, target.path)
+            else
+              table.insert(candidates, target.path)
+            end
+          end
+        end
+        -- Whatever CMake did not account for (a hand-built binary, a
+        -- non-CMake project) still comes from the scan.
+        for _, path in ipairs(find_executables(root)) do
+          if not seen[path] then table.insert(candidates, path) end
+        end
 
         -- Float the previous choice for this project to the top
         local previous = last_choice[root]

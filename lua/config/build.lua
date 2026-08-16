@@ -128,8 +128,11 @@ function M.build_cmd()
   if exists(root, "CMakeLists.txt") then
     -- Configure every time: it is a no-op once the cache exists, and it means
     -- a fresh clone builds on the first <leader>bb rather than erroring. The
-    -- export flag keeps compile_commands.json in step for clangd.
-    return "cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build", "cmake"
+    -- build type, target and preset come from lua/config/cmake.lua, which also
+    -- keeps the export flag on so compile_commands.json stays in step with
+    -- clangd — and which passes CMAKE_BUILD_TYPE, without which the build
+    -- carries no -g and every breakpoint silently fails to bind.
+    return require("config.cmake").build_cmd(root)
   elseif exists(root, "Makefile") or exists(root, "makefile") then
     return "make", "make"
   elseif exists(root, "Cargo.toml") then
@@ -147,7 +150,10 @@ local job = nil
 
 --- Build the project asynchronously into the quickfix list.
 --- @param cmd string|nil overrides detection
-function M.build(cmd)
+--- @param on_success function|nil run after a zero-exit build, on the main loop.
+---   This is what makes "build, then debug" one keypress (<leader>bd) rather
+---   than a build you have to watch before pressing <F5> yourself.
+function M.build(cmd, on_success)
   if job then
     vim.notify("A build is already running (<leader>bk to stop it)", vim.log.levels.WARN)
     return
@@ -182,6 +188,7 @@ function M.build(cmd)
     if res.code == 0 then
       vim.cmd("cclose")
       vim.notify(valid > 0 and ("Build OK, " .. valid .. " warning(s)") or "Build OK", vim.log.levels.INFO)
+      if on_success then on_success() end
     else
       if valid > 0 then
         vim.cmd("botright copen")

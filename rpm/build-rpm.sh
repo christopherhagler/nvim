@@ -31,7 +31,8 @@ TOOLS="$WORK/tools"                      # build-time-only tools (tree-sitter CL
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; RESET='\033[0m'
 info() { echo -e "${BLUE}[info]${RESET}  $*"; }
 ok()   { echo -e "${GREEN}[ ok ]${RESET}  $*"; }
-die()  { echo -e "${RED}[err]${RESET}   $*" >&2; exit 1; }
+err()  { echo -e "${RED}[err]${RESET}   $*" >&2; }
+die()  { err "$*"; exit 1; }
 
 # ── Mason packages ─────────────────────────────────────────────────────────────
 # Not hardcoded: resolved at bake time from lua/config/servers.lua and
@@ -39,9 +40,11 @@ die()  { echo -e "${RED}[err]${RESET}   $*" >&2; exit 1; }
 # mason-lspconfig's own mapping table. There is no second list to drift.
 # Populated by resolve_mason_packages().
 #
-# If a package's prebuilt binary needs a newer glibc than EL8's 2.28, the
-# offline smoke test fails — pin an older build in lua/config/tools.lua with
-# name@version (e.g. clang-format@17.0.3) and rebuild.
+# If a package's prebuilt binary needs a newer glibc than EL8's 2.28, Mason
+# still installs it happily — unpacking a tarball says nothing about whether the
+# loader can run it — so verify_mason_binaries() below checks that separately.
+# Pin an older build in lua/config/tools.lua ({ name, version = "x.y.z" }) and
+# rebuild.
 MASON_PKGS=()
 
 # ── Preflight ──────────────────────────────────────────────────────────────────
@@ -176,7 +179,11 @@ resolve_mason_packages() {
         end
         table.insert(pkgs, to_pkg[server])
       end
-      vim.list_extend(pkgs, require('config.tools'))
+      -- tools.lua entries are either a name or { name, version = 'x.y.z' };
+      -- :MasonInstall takes the pin as name@version.
+      for _, tool in ipairs(require('config.tools')) do
+        table.insert(pkgs, type(tool) == 'table' and (tool[1] .. '@' .. tool.version) or tool)
+      end
       local f = assert(io.open('$list', 'w'))
       f:write(table.concat(pkgs, '\n') .. '\n')
       f:close()" \
@@ -188,6 +195,44 @@ resolve_mason_packages() {
     if [ -n "$pkg" ]; then MASON_PKGS+=("$pkg"); fi
   done < "$list"
   ok "Mason packages resolved (${#MASON_PKGS[@]}): ${MASON_PKGS[*]}"
+}
+
+# A Mason "install" is an unpack: it succeeds whether or not the loader can run
+# what came out of the tarball. That is exactly how a package built against a
+# newer glibc gets into the payload — the receipt is written, the smoke test
+# (LSP + treesitter + DAP) never touches a formatter or linter, and the failure
+# surfaces months later on the air-gapped box as "version `GLIBC_2.34' not
+# found" the first time someone formats a file.
+#
+# ldd runs the real loader, so a missing library *or* a missing symbol version
+# both show up as "not found" here, on the EL8 host that defines the floor.
+verify_mason_binaries() {
+  local libc
+  libc=$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)
+  info "Verifying bundled Mason binaries run on this host (glibc ${libc:-unknown})..."
+  local pkgs="$STAGE_HOME/.local/share/nvim/mason/packages"
+  [ -d "$pkgs" ] || die "no Mason package directory at $pkgs"
+  local bad=0 checked=0 f out
+  # Executables, shared libraries, and .node files (Node native addons, which
+  # are ELF shared objects but are rarely marked executable).
+  while IFS= read -r f; do
+    # ELF only: ldd on a shell script or a JS file reports nothing useful
+    [ "$(head -c 4 "$f" | od -An -tx1 | tr -d ' ')" = "7f454c46" ] || continue
+    checked=$((checked + 1))
+    out=$(ldd "$f" 2>&1 || true)
+    case "$out" in
+      *"not found"*)
+        err "cannot run on this host: ${f#"$pkgs"/}"
+        printf '%s\n' "$out" | grep "not found" | sed 's/^/         /' >&2
+        bad=1
+        ;;
+    esac
+  done < <(find "$pkgs" -type f \( -perm -u+x -o -name '*.so' -o -name '*.so.*' -o -name '*.node' \))
+  [ "$bad" -eq 0 ] || die "Payload contains binaries EL8 cannot run — pin an older version in lua/config/tools.lua"
+  # A find that matched nothing (wrong path, changed layout) would otherwise
+  # report success without having inspected a single binary.
+  [ "$checked" -gt 0 ] || die "found no ELF binaries under $pkgs — the check did not actually run"
+  ok "$checked bundled Mason binaries resolve against this host's glibc"
 }
 
 bake_payload() {
@@ -250,6 +295,8 @@ bake_payload() {
       || die "Mason package failed to install: $pkg"
   done
   ok "All ${#MASON_PKGS[@]} Mason packages installed"
+
+  verify_mason_binaries
 
   info "Pruning caches..."
   rm -rf "$STAGE_HOME/.cache" "$STAGE_HOME/.local/state" \
