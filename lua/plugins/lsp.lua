@@ -159,7 +159,12 @@ return {
           map("<leader>re", function()
             vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
           end, "Refactor", { "n", "v" })
-          map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
+          -- Guarded like the type-hierarchy pair below: clangd has no CodeLens,
+          -- so leaving this bound on a C++ buffer only offers a key that
+          -- answers "not supported by any server".
+          if client:supports_method("textDocument/codeLens") then
+            map("<leader>lc", vim.lsp.codelens.run, "CodeLens action")
+          end
 
           -- Call hierarchy: "who calls this?" / "what does this call?".
           -- gr answers it textually; these answer it structurally, which is
@@ -183,9 +188,20 @@ return {
           map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
           map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to location list")
 
+          -- Inlay hints and CodeLens are the only two features here that talk to
+          -- the server without being asked, so they are the two that can fail in
+          -- the user's face. Both are gated on the buffer having a real file://
+          -- URI: a :Gdiffsplit buffer is still filetype cpp, so clangd attaches
+          -- to it, but the first inlayHint request against fugitive:// comes
+          -- back "-32602: clangd only supports 'file' URI scheme for workspace
+          -- files" — an error you did nothing to provoke and can do nothing
+          -- about. Hover and go-to-definition stay mapped there; those only
+          -- complain when you actually press them.
+          local is_file = vim.uri_from_bufnr(bufnr):sub(1, 7) == "file://"
+
           -- Inlay hints (inline parameter names / inferred types), on by default
           if client:supports_method("textDocument/inlayHint") then
-            vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+            if is_file then vim.lsp.inlay_hint.enable(true, { bufnr = bufnr }) end
             map("<leader>li", function()
               vim.lsp.inlay_hint.enable(
                 not vim.lsp.inlay_hint.is_enabled({ bufnr = bufnr }),
@@ -210,7 +226,7 @@ return {
           end
 
           -- CodeLens: managed capability on 0.12+ (refreshes itself on changes)
-          if client:supports_method("textDocument/codeLens") then
+          if is_file and client:supports_method("textDocument/codeLens") then
             vim.lsp.codelens.enable(true, { bufnr = bufnr })
           end
         end,

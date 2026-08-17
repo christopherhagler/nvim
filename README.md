@@ -183,6 +183,7 @@ lua/
     servers.lua             # LSP servers to install/enable — single source of truth
     tools.lua               # Mason formatters/linters/debug adapters — single source of truth
     parsers.lua             # Treesitter parsers — single source of truth
+    tscompat.lua            # Lends telescope the nvim-treesitter API its last release expects
   plugins/
     ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
     editor.lua              # Treesitter + textobjects, matchup, autopairs, surround, grug-far, neogen, undotree
@@ -307,6 +308,16 @@ it is the fastest way to reach a function whose file you don't know.
 Telescope is read-only — it finds matches but cannot change them. Project-wide
 edits go through grug-far below.
 
+Telescope's last release predates nvim-treesitter's `main` rewrite and still
+calls `nvim-treesitter.parsers.ft_to_lang()` and `nvim-treesitter.configs`,
+neither of which survives on the branch this config pins. Left alone that breaks
+`<leader>f/` outright and makes every preview throw instead of highlighting, so
+`lua/config/tscompat.lua` lends telescope the two modules it expects — answered
+from core `vim.treesitter` — for exactly as long as it takes telescope to look
+them up. It deliberately does *not* patch `nvim-treesitter.parsers` in place:
+nvim-treesitter builds its language list from that table's keys, so an added
+function would show up as a bogus language in `:TSInstall`.
+
 ### Search & Replace (grug-far)
 
 Project-wide find and replace, backed by ripgrep. Opens a normal buffer: edit
@@ -372,7 +383,7 @@ See [Building and running](#building-and-running) for what gets detected, and
 | `<leader>rn` | Rename symbol |
 | `<leader>a` | Code actions |
 | `<leader>re` | Refactor |
-| `<leader>lc` | CodeLens action |
+| `<leader>lc` | CodeLens action (only bound when the server offers CodeLens) |
 | `<leader>lf` | Format buffer (manual; via conform) |
 | `<leader>li` | Toggle inlay hints |
 | `<leader>ld` | Generate a doc comment for the symbol below (neogen) |
@@ -396,6 +407,14 @@ google-style docstrings for Python, JSDoc for JS/TS, LDoc for Lua.
 `<leader>a` and `<leader>re` work in visual mode as well as normal. That is not
 cosmetic: a code action over a *range* is how clangd offers "extract function"
 and "extract variable", and neither is reachable from a normal-mode cursor.
+
+Inlay hints and CodeLens are the only two LSP features here that send a request
+you did not ask for, so they are the only two that can fail unprompted. Both are
+switched on only for buffers with a real `file://` name. A `:Gdiffsplit` buffer
+is still filetype `cpp`, so clangd attaches to it, and the first inlay-hint
+request against `fugitive://…` came back as a `-32602` error banner you did
+nothing to cause. Hover and go-to-definition stay bound in those buffers — they
+only complain if you press them.
 
 Neovim ships its own `gr`-prefixed LSP mappings (`grr`, `grn`, `gra`, `gri`,
 `grt`, and `grx` as of 0.12). Every one of them is rebound above, so the config

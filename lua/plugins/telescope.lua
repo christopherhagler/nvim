@@ -28,14 +28,30 @@ return {
       -- Grep the word under the cursor / the visual selection, without typing it
       { "<leader>fw", "<cmd>Telescope grep_string<cr>", desc = "Grep word under cursor" },
       { "<leader>fw", "<cmd>Telescope grep_string<cr>", mode = "v", desc = "Grep selection" },
-      -- Fuzzy find inside the current buffer (the / that tolerates typos)
-      { "<leader>f/", "<cmd>Telescope current_buffer_fuzzy_find<cr>", desc = "Search in buffer" },
+      -- Fuzzy find inside the current buffer (the / that tolerates typos).
+      -- This is the one builtin that reaches for nvim-treesitter on every call
+      -- rather than caching it at load, so it needs the shim each time.
+      {
+        "<leader>f/",
+        function()
+          require("config.tscompat").with(function()
+            require("telescope.builtin").current_buffer_fuzzy_find()
+          end)
+        end,
+        desc = "Search in buffer",
+      },
       -- Reopen the last picker with its query and cursor position intact
       { "<leader>fp", "<cmd>Telescope resume<cr>", desc = "Resume last picker" },
       { "<leader>fk", "<cmd>Telescope keymaps<cr>", desc = "Keymaps" },
       { "<leader>fc", "<cmd>Telescope git_status<cr>", desc = "Changed files" },
     },
     config = function()
+      -- The previewers capture nvim-treesitter at module load and never look
+      -- again, so pull that module in first, under the compatibility shim —
+      -- otherwise every preview raises instead of highlighting. See
+      -- lua/config/tscompat.lua.
+      require("config.tscompat").with(function() require("telescope.previewers.utils") end)
+
       local telescope = require("telescope")
       local actions = require("telescope.actions")
 

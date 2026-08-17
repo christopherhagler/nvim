@@ -11,8 +11,15 @@ return {
     },
     keys = {
       { "<leader>db", function() require("dap").toggle_breakpoint() end, desc = "Toggle breakpoint" },
+      -- vim.ui.input rather than vim.fn.input: this is the only prompt in the
+      -- config that was still on the bottom line rather than in noice's popup,
+      -- and vim.fn.input cannot report cancellation — pressing <Esc> returns ""
+      -- there, which set_breakpoint takes as "no condition" and quietly leaves
+      -- an unconditional breakpoint behind.
       { "<leader>dB", function()
-          require("dap").set_breakpoint(vim.fn.input("Condition: "))
+          vim.ui.input({ prompt = "Breakpoint condition: " }, function(cond)
+            if cond and cond ~= "" then require("dap").set_breakpoint(cond) end
+          end)
         end, desc = "Conditional breakpoint" },
       -- Stop where the cursor is without leaving a breakpoint behind — the
       -- "why is it not reaching this line" question, answered in one key.
