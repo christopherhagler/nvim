@@ -115,7 +115,8 @@ return {
       --   • cppdbg (cpptools) — drives gdb over GDB/MI on Linux/RHEL, works with any
       --     gdb version (even ones predating gdb's native DAP) and attaches to a
       --     remote gdbserver. Config schema matches VSCode launch.json (loaded below).
-      -- Registering both is conflict-free; <F5> just lists every config in a picker.
+      -- Registering both is conflict-free; <F5> lists the configs of whichever
+      -- debuggers are actually installed (see below).
       dap.adapters.codelldb = {
         type = "server",
         port = "${port}",
@@ -365,12 +366,22 @@ return {
       }
 
       -- List the platform-appropriate adapter first so the default pick is usable:
-      -- LLDB on this Mac, gdb on Linux/RHEL. (All configs stay available on both.)
-      local cpp_launch
-      if vim.fn.has("mac") == 1 then
-        cpp_launch = vim.list_extend(vim.deepcopy(lldb_cfgs), gdb_cfgs)
-      else
-        cpp_launch = vim.list_extend(vim.deepcopy(gdb_cfgs), lldb_cfgs)
+      -- LLDB on this Mac, gdb on Linux/RHEL.
+      --
+      -- Only debuggers that exist are offered. macOS has no gdb (no working
+      -- arm64-Darwin build), and a gdb entry there does not fail gracefully:
+      -- cpptools exits on launch with "Unable to determine path to debugger",
+      -- the session dies before dap-ui has anything to show, and the picker
+      -- keeps offering it. A gdb set explicitly (g:gdb_path / $GDB) always
+      -- counts, since that is a deliberate choice.
+      local has_gdb = vim.g.gdb_path ~= nil or vim.env.GDB ~= nil or vim.fn.executable("gdb") == 1
+      local has_lldb = vim.fn.executable(vim.fn.stdpath("data") .. "/mason/bin/codelldb") == 1
+      local first, second = lldb_cfgs, gdb_cfgs
+      if vim.fn.has("mac") == 0 then first, second = gdb_cfgs, lldb_cfgs end
+      local cpp_launch = {}
+      for _, group in ipairs({ first, second }) do
+        local available = (group == gdb_cfgs and has_gdb) or (group == lldb_cfgs and has_lldb)
+        if available then vim.list_extend(cpp_launch, vim.deepcopy(group)) end
       end
       -- cuda-gdb is gdb with GPU awareness (kernel breakpoints, `cuda thread`,
       -- device memory) and speaks the same GDB/MI, so it is just cpptools with

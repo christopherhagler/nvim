@@ -53,7 +53,7 @@ Optional, per workflow:
 ### Platform notes (macOS / RHEL & Rocky 8 and 9)
 
 - **Neovim on RHEL 8 / Rocky 8**: official release binaries require glibc 2.31+, but EL8 ships 2.28 — build from source or use a compatible build.
-- **C/C++ debugging** picks the right adapter per platform automatically: codelldb (LLDB) on macOS, gdb via cpptools on Linux. Both stay available in the `<F5>` picker.
+- **C/C++ debugging** picks the right adapter per platform automatically: codelldb (LLDB) on macOS, gdb via cpptools on Linux. The `<F5>` picker lists only debuggers that are installed, so macOS (which has no gdb) never offers a gdb entry that would die on launch.
 - **blink.cmp** downloads a prebuilt Rust fuzzy matcher; if it's incompatible with the system (e.g. old glibc), it falls back to the Lua matcher with a warning — completion keeps working.
 - **Language standard for single-file builds** is probed, not assumed. EL8 ships gcc 8.5, which predates `-std=c++20` entirely; `<leader>bb` asks the compiler what it accepts (newest first, `c++20 → c++17 → c++14`) and caches the answer. macOS clang gets c++20, Rocky 8 gets c++17, neither needs configuring. Single-file **C++** builds additionally need `gcc-c++` installed, which the base `gcc` package does not pull in.
 - **`bear`** changed its CLI between versions 2 and 3 (version 3 requires a `--` separator before the build command, version 2 rejects it). `:CompileCommands` checks the installed version and uses the matching form.
@@ -513,7 +513,7 @@ avoids stepping through source that no longer matches the binary.
 
 **Language notes.**
 
-- **C/C++** — codelldb (LLDB) is listed first on macOS, gdb via cpptools first on Linux; both stay available everywhere. Launches use an integrated terminal, so a program that reads stdin works.
+- **C/C++** — codelldb (LLDB) is listed first on macOS, gdb via cpptools first on Linux; each is offered wherever it is installed (gdb counts as installed when it is on `$PATH` or set with `g:gdb_path` / `$GDB`). Launches use an integrated terminal, so a program that reads stdin works.
 - **Python** — debugpy runs from Mason's own venv, but the *debugged program* runs under the project's virtualenv (see [Python virtualenvs](#python-virtualenvs)). Without that split, every third-party import fails under the debugger only.
 - **JS/TS** — node launch/attach, plus "Launch Chrome against dev server" for browser debugging. `.jsx` and `.tsx` are wired up too, which plain `javascript`/`typescript` configs miss.
 - **CUDA** — "Launch (cuda-gdb)" is listed first in `.cu` buffers and last in C/C++ ones, whenever the toolkit has cuda-gdb (Linux only). It is cpptools driving cuda-gdb, so kernel breakpoints and host code both work.
