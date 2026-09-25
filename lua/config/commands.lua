@@ -64,6 +64,17 @@ command("CompileCommands", function(opts)
   if opts.bang then db.fallback() else db.generate() end
 end, { bang = true, desc = "Generate compile_commands.json for clangd (! writes a .clangd fallback)" })
 
+-- ── MATLAB ────────────────────────────────────────────────────────────────────
+-- :Matlab <code> evaluates in the background session, like typing at >> in the
+-- Command Window. Works from any buffer once matlab_ls is running.
+command("Matlab", function(opts)
+  require("config.matlab_session").eval(opts.args)
+end, { nargs = "+", desc = "Evaluate MATLAB code in the background session" })
+
+command("MatlabSetup", function()
+  require("config.matlab_session").setup_project()
+end, { desc = "Re-run the project's MATLAB path setup (.prj / startup.m / g:matlab_setup)" })
+
 -- ── Formatting ────────────────────────────────────────────────────────────────
 -- Off by default, matching <leader>lf being the normal way to format here. This
 -- is for the projects with a CI formatting gate, where forgetting once costs a

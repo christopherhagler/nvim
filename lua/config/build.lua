@@ -37,6 +37,19 @@ ERRORFORMAT.typescript = ERRORFORMAT.javascript
 ERRORFORMAT.javascriptreact = ERRORFORMAT.javascript
 ERRORFORMAT.typescriptreact = ERRORFORMAT.javascript
 
+-- nvcc's own front end reports `kernel.cu(42): error: ...` — parentheses where
+-- gcc uses a colon, and no column — which the default 'errorformat' does not
+-- match, so a failed CUDA build opened an empty quickfix list. Prepended to the
+-- default for every compiled language rather than keyed on the current buffer's
+-- filetype: a CMake project with CUDA targets is as likely to be built from a
+-- .cpp or CMakeLists.txt buffer as from a .cu one. Warnings carry a number
+-- (`warning #177-D: ...`), which %*[^:] skips.
+local NVCC_EFM = table.concat({
+  "%f(%l): %trror: %m",
+  "%f(%l): %tarning%*[^:]: %m",
+  "%f(%l): catastrophic %trror: %m",
+}, ",")
+
 -- Kept as an alias so callers inside this file read naturally; the definition
 -- lives in lua/config/project.lua, shared with clangd, dap, neotest and venv.
 function M.root()
@@ -101,6 +114,19 @@ local function single_file_build()
   local src = vim.fn.expand("%:p")
   if src == "" then return nil end
   local ft = vim.bo.filetype
+
+  if ft == "cuda" then
+    local nvcc = require("config.cuda").bin("nvcc")
+    if not nvcc then
+      vim.notify("No nvcc found (set $CUDA_HOME, or add the toolkit's bin/ to $PATH)", vim.log.levels.ERROR)
+      return nil
+    end
+    -- -G: device-side debug info, so cuda-gdb can step inside kernels. It also
+    -- disables device optimisation, which is the right trade for a scratch file.
+    return ("%s -g -G -Xcompiler -Wall -o %s %s"):format(
+      vim.fn.shellescape(nvcc), vim.fn.shellescape(scratch_bin()), vim.fn.shellescape(src))
+  end
+
   if ft ~= "c" and ft ~= "cpp" then return nil end
 
   local compiler = ft == "c" and (vim.env.CC or "cc") or (vim.env.CXX or "c++")
@@ -167,7 +193,7 @@ function M.build(cmd, on_success)
   end
 
   local root = M.root()
-  local efm = ERRORFORMAT[vim.bo.filetype] or vim.o.errorformat
+  local efm = ERRORFORMAT[vim.bo.filetype] or (NVCC_EFM .. "," .. vim.o.errorformat)
   vim.cmd("silent! wall")
   vim.notify(("Building (%s): %s"):format(label, cmd), vim.log.levels.INFO)
 
@@ -216,9 +242,24 @@ local function run_cmd()
   local file = vim.fn.shellescape(vim.fn.expand("%:p"))
   local ft = vim.bo.filetype
 
-  if ft == "c" or ft == "cpp" then
+  if ft == "c" or ft == "cpp" or ft == "cuda" then
     local compile = single_file_build()
     return compile and (compile .. " && " .. vim.fn.shellescape(scratch_bin()))
+  elseif ft == "matlab" or ft == "octave" then
+    -- run() rather than calling the script by name: it cds into the file's
+    -- folder for the duration, so the script's own functions and data files
+    -- resolve the way they do in the MATLAB editor. Single quotes are doubled
+    -- because the path sits inside a MATLAB string literal.
+    local path = vim.fn.expand("%:p"):gsub("'", "''")
+    local matlab = ft == "matlab" and require("config.matlab").bin()
+    if matlab then
+      -- -batch (R2019a+): no desktop, no splash, exits non-zero on error
+      return ("%s -batch %s"):format(vim.fn.shellescape(matlab), vim.fn.shellescape("run('" .. path .. "')"))
+    elseif vim.fn.executable("octave") == 1 then
+      return "octave --no-gui --quiet --eval " .. vim.fn.shellescape("run('" .. path .. "')")
+    end
+    vim.notify("Neither MATLAB nor Octave found (set g:matlab_install_path)", vim.log.levels.WARN)
+    return nil
   elseif ft == "python" then
     -- The project's venv, not whatever python3 $PATH happens to point at
     return (require("config.venv").python(M.root()) or "python3") .. " " .. file

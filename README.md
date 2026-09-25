@@ -1,6 +1,6 @@
 # Neovim Configuration
 
-A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, `nvim-dap` for debugging, and `neotest` for tests. Building and running are built in — `<leader>bb` compiles the project into the quickfix list, `<leader>br` runs the current file.
+A Lua-first Neovim setup targeting C/C++, CUDA, Python, MATLAB, Bash, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, `nvim-dap` for debugging, and `neotest` for tests. Building and running are built in — `<leader>bb` compiles the project into the quickfix list, `<leader>br` runs the current file.
 
 ## Table of Contents
 
@@ -12,6 +12,8 @@ A Lua-first Neovim setup targeting C/C++, Python, Bash, and web development. Use
 - [Building and running](#building-and-running)
 - [CMake projects](#cmake-projects)
 - [C/C++ project setup](#cc-project-setup)
+- [CUDA](#cuda)
+- [MATLAB](#matlab)
 - [Python virtualenvs](#python-virtualenvs)
 - [The project root](#the-project-root)
 - [Project-local configuration](#project-local-configuration)
@@ -44,9 +46,11 @@ Optional, per workflow:
 
 - **cmake >= 3.14** — for CMake projects; `:CompileCommands` and `<leader>bb` both drive it, and target/preset selection reads its file API (see [CMake projects](#cmake-projects))
 - **bear** — records compile flags from a `make` build so clangd can read them (`:CompileCommands`). Only needed for Makefile projects; CMake exports the same data itself. EPEL ships it on EL8 (`dnf install bear`), Homebrew on macOS.
+- **CUDA toolkit** (Linux) — `.cu` files get clangd, clang-format and treesitter regardless; the toolkit adds single-file builds (`nvcc`), kernel debugging (`cuda-gdb`) and CUDA headers for clangd. Found via `$CUDA_HOME`, `nvcc` on `$PATH`, or `/usr/local/cuda[-*]` (see [CUDA](#cuda))
+- **MATLAB** R2021b+ (or Octave) — matlab_ls needs a MATLAB install for diagnostics and formatting; `<leader>br` runs scripts with `matlab -batch`, or Octave when MATLAB is absent (see [MATLAB](#matlab))
 - **pytest / jest / vitest / gtest** — installed per project, not globally; `<leader>Tr` runs whichever the project uses
 
-### Platform notes (macOS / RHEL 8 / Rocky 8)
+### Platform notes (macOS / RHEL & Rocky 8 and 9)
 
 - **Neovim on RHEL 8 / Rocky 8**: official release binaries require glibc 2.31+, but EL8 ships 2.28 — build from source or use a compatible build.
 - **C/C++ debugging** picks the right adapter per platform automatically: codelldb (LLDB) on macOS, gdb via cpptools on Linux. Both stay available in the `<F5>` picker.
@@ -57,6 +61,9 @@ Optional, per workflow:
 - **`<leader>K`** needs `man-pages` and `man-db`, which minimal RHEL/Rocky installs omit. Without them it reports "no man page" and nothing else changes.
 - **Deliberately excluded** because their upstream binaries need a newer glibc than EL8 provides: `asm_lsp` and `neocmakelsp`. Anything that would work on the Mac but not the RHEL boxes does not go in `lua/config/servers.lua`.
 - **stylua is pinned to 2.0.2** in `lua/config/tools.lua`. Its Linux release is a glibc build, and from 2.3.0 on it is linked against `GLIBC_2.34`; 2.0.2 is the newest release that still runs on EL8's 2.28. Every other bundled binary was checked against the same floor — clangd (2.18), lua-language-server (2.17), codelldb and liblldb (2.18), cpptools (2.16), and the bundled Node 22 (2.28 exactly) all clear it, and ruff, shellcheck, shfmt and stylua's musl variant are static. `rpm/build-rpm.sh` re-checks the whole payload with `ldd` at bake time so a future release that raises its floor fails the build instead of the user.
+- **clangd and gcc-toolset**: clangd's own GCC detection picks the *newest* `/opt/rh/gcc-toolset-*` libstdc++, whatever the project actually builds with. `--query-driver` defaults to the system and gcc-toolset drivers (plus Homebrew gcc on macOS) so clangd asks the compiler in `compile_commands.json` for its real include paths. Override with `vim.g.clangd_query_driver` / `$CLANGD_QUERY_DRIVER`; set it to `""` to disable.
+- **Linux ARM64 (aarch64)** is supported alongside x86_64. Every Mason package has an ARM64 build except **clangd**, so on Linux ARM64 the config skips Mason's and enables the distro's from `$PATH` (`dnf install clang-tools-extra`; `setup.sh` checks for it). CUDA works the same on both — the toolkit lives under `/usr/local/cuda` on SBSA/Grace systems too. MATLAB has no Linux ARM64 release; there, `.m` files get matlab_ls's MATLAB-free features and Octave for running.
+- **EL9** (glibc 2.34, gcc 11, cmake 3.26) clears every floor above; EL8 is the constraint everything is checked against.
 - `setup.sh` (install/health) checks all of the above per platform. For `cmake` and the `tree-sitter` CLI it checks the **version**, not just presence — both are tools that install cleanly and then fail at a specific feature (cmake 3.11 configures a project fine and then reports no targets), which is a far quieter failure than a missing binary.
 
 Everything else added for building, testing and editing is either pure Lua/Vimscript
@@ -178,7 +185,11 @@ lua/
     cmake.lua               # CMake build type / target / preset, and target discovery via the file API
     compiledb.lua           # compile_commands.json generation for clangd
     venv.lua                # Python virtualenv resolution (pyright + debugpy + :Run)
-    cfamily.lua             # Buffer-local C/C++ setup (include path, man pages)
+    cfamily.lua             # Buffer-local C/C++/CUDA setup (include path, man pages)
+    cuda.lua                # CUDA toolkit discovery + clangd's CUDA flags
+    matlab.lua              # MATLAB install discovery (matlab_ls, <leader>br)
+    matlab_session.lua      # Run code, project path, figures, output in matlab_ls's MATLAB
+    matlab_dap.lua          # nvim-dap adapter bridged onto matlab_ls's built-in debugger
     indent.lua              # Per-filetype indent widths (applied by after/ftplugin)
     servers.lua             # LSP servers to install/enable — single source of truth
     tools.lua               # Mason formatters/linters/debug adapters — single source of truth
@@ -198,7 +209,7 @@ lua/
     terminal.lua            # toggleterm
     ai.lua                  # claudecode.nvim (Claude Code editor integration)
 after/ftplugin/             # Per-filetype settings; applies lua/config/indent.lua
-                            # (c.lua and cpp.lua additionally pull in config/cfamily.lua)
+                            # (c.lua, cpp.lua and cuda.lua additionally pull in config/cfamily.lua)
 .stylua.toml                # Lua formatting (stylua defaults to tabs; this repo uses 2 spaces)
 rpm/                        # Offline RPM build for air-gapped EL8 systems
   build-rpm.sh              # One-command builder (run on a connected EL8 host)
@@ -370,6 +381,31 @@ everything else keeps its upstream default (see `g?`).
 See [Building and running](#building-and-running) for what gets detected, and
 [CMake projects](#cmake-projects) for the build type / target / preset model.
 
+### MATLAB
+
+Buffer-local to `.m` files. Everything runs in the background MATLAB that
+matlab_ls keeps alive (see [MATLAB](#matlab)); output appears in a
+`matlab://output` split, or in dap-ui's REPL while debugging.
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>br` / `<leader>mr` | Run the current file (`run('…')`, with the project path set up) |
+| `<leader>ms` | Run the current `%%` section (visual: run the selected lines) |
+| `<leader>ml` | Run the current line |
+| `<leader>mc` | Type a command at a `>>` prompt |
+| `<leader>mh` | `help` for the word under the cursor |
+| `<leader>mw` | `whos` — list workspace variables |
+| `<leader>mk` | Interrupt (Ctrl-C) |
+| `<leader>mo` | Toggle the output window (`q` closes it) |
+| `<leader>mf` | Export all open figures to PNG and open them (for sessions with no display) |
+| `<leader>mx` | `close all` figures |
+| `<leader>mp` | Re-run the project's path setup |
+| `]]` / `[[` | Next / previous `%%` section |
+| `<F5>` | Debug: "Run current file" or "Run command" (e.g. `myfunc(2, 'x')`) |
+
+Commands: `:Matlab <code>` evaluates from any buffer; `:MatlabSetup` re-runs the
+path setup.
+
 ### LSP
 
 | Key | Action |
@@ -430,8 +466,9 @@ In visual mode it formats just the selection.
 ### Debugger (nvim-dap)
 
 VSCode-style function keys for stepping, plus leader mappings for the rest.
-The same keys drive every configured language: C/C++ (codelldb / gdb), Python
-(debugpy), JS/TS and React (js-debug, node or Chrome), and Bash (bashdb).
+The same keys drive every configured language: C/C++ (codelldb / gdb), CUDA
+(cuda-gdb), Python (debugpy), MATLAB (MathWorks' adapter), JS/TS and React
+(js-debug, node or Chrome), and Bash (bashdb).
 `<F5>` lists every configuration that applies to the current filetype.
 
 | Key | Action |
@@ -479,6 +516,8 @@ avoids stepping through source that no longer matches the binary.
 - **C/C++** — codelldb (LLDB) is listed first on macOS, gdb via cpptools first on Linux; both stay available everywhere. Launches use an integrated terminal, so a program that reads stdin works.
 - **Python** — debugpy runs from Mason's own venv, but the *debugged program* runs under the project's virtualenv (see [Python virtualenvs](#python-virtualenvs)). Without that split, every third-party import fails under the debugger only.
 - **JS/TS** — node launch/attach, plus "Launch Chrome against dev server" for browser debugging. `.jsx` and `.tsx` are wired up too, which plain `javascript`/`typescript` configs miss.
+- **CUDA** — "Launch (cuda-gdb)" is listed first in `.cu` buffers and last in C/C++ ones, whenever the toolkit has cuda-gdb (Linux only). It is cpptools driving cuda-gdb, so kernel breakpoints and host code both work.
+- **MATLAB** — debugs in the background MATLAB, so the project path applies. Breakpoints (including conditional), stepping, call stack, locals, watches and hover evaluation work; the program's output goes to the dap-ui REPL. "Run command" is for functions that need arguments. Breakpoints are cleared from MATLAB when the session ends, so a later plain run never stops at one.
 - **Bash** — needs bash >= 4 (macOS ships 3.2; Homebrew's is used when present).
 
 ### Testing (neotest)
@@ -694,6 +733,82 @@ Other C/C++ specifics:
 - Comments default to `//` rather than `/* */`, so `gcc`/`gc` can comment out a region containing a block comment.
 - Background indexing is limited to half the available cores at low priority; on a large tree, indexing on all cores makes the editor unusable while it runs.
 
+## CUDA
+
+`.cu` / `.cuh` buffers are handled as C++ with extensions: clangd (it serves the `cuda` filetype), clang-format, the `cuda` treesitter parser, and the same `gf` / `<leader>K` / `<leader>lg` setup as C/C++. The toolkit is located by `lua/config/cuda.lua` — `g:cuda_home`, `$CUDA_HOME`/`$CUDA_PATH`, `nvcc` on `$PATH`, then `/usr/local/cuda` and the newest `/usr/local/cuda-*`.
+
+clangd parses CUDA with clang's frontend, not nvcc's, which takes two fixes that are applied automatically:
+
+- **CMake**: CUDA projects are configured with `-DCMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES=OFF`. Otherwise nvcc's include paths sit in a `.rsp` file that clangd cannot read, and every project header in a `.cu` file reports as missing.
+- **`.clangd`**: `:CompileCommands` writes a CUDA section (scoped to `.cu`/`.cuh`) that adds `--cuda-path` and strips nvcc-only flags (`-gencode`, `-Xcompiler`, `--expt-*`, …). An existing `.clangd` is left alone, with a warning if it has no CUDA section.
+
+`<leader>bb` / `<leader>br` on a lone `.cu` file compile it with `nvcc -g -G`. nvcc's `file.cu(42): error:` messages are parsed into the quickfix list for every C-family build, including CMake builds started from a `.cpp` buffer. `<F5>` offers **Launch (cuda-gdb)** (cpptools driving cuda-gdb) first in `.cu` buffers and last in C/C++ ones, whenever cuda-gdb exists.
+
+macOS has no CUDA toolkit: `.cu` files still highlight and format, but clangd reports the CUDA headers as missing.
+
+## MATLAB
+
+`.m` files are detected by content (`%` comments → matlab, `#`/`end_try_catch` → octave, `#import` → objc); set `vim.g.filetype_m = "matlab"` in a project's `.nvim.lua` to force it.
+
+### One background MATLAB
+
+matlab_ls (MathWorks' language server) launches a headless MATLAB and keeps it
+running for as long as Neovim is open. This config uses that one session for
+everything:
+
+- **Editing** — Code Analyzer diagnostics, formatting (`<leader>lf`), go-to-definition, completion.
+- **Running** — `<leader>br`, `<leader>ms` and friends ([keys](#matlab)) evaluate in it. There is no 10–15 s start-up per run, and the workspace survives between runs the way it does in the Command Window.
+- **Debugging** — `<F5>` attaches nvim-dap and dap-ui to it (see [Debugger](#debugger-nvim-dap)).
+- **Figures** — see below.
+
+The install is found from `matlab` on `$PATH`, `/usr/local/MATLAB/R*`,
+`/opt/MATLAB/R*`, or `/Applications/MATLAB_R*.app` (newest wins); override with
+`vim.g.matlab_install_path` or `$MATLAB_ROOT`. Requires R2021b or later. The
+first MATLAB command after opening Neovim waits for it to start (a notification
+says so); later ones do not.
+
+Without MATLAB, matlab_ls is told not to launch it and keeps workspace-indexed
+completion, and `<leader>br` runs the file with Octave instead.
+
+### Project path
+
+The server already adds the workspace root (the `.git` root, else the cwd) to
+the path and `cd`s into it. Projects that build their own path get it set up
+automatically each time MATLAB starts, before anything else runs, by the first
+of:
+
+1. `vim.g.matlab_setup` in the project's `.nvim.lua` — any MATLAB command, e.g. `"run('tools/setup_paths.m')"` or `"addpath(genpath('src'))"`. Set it to `false` to turn setup off.
+2. A MATLAB project (`*.prj`) at the root → `openProject(…)`, which applies the project's path and runs its startup files, exactly as the desktop does.
+3. A `startup.m` at the root → `run(…)`.
+
+Because it is the language server's own MATLAB, the same path also drives its
+go-to-definition. After changing the setup script, `<leader>mp` (or
+`:MatlabSetup`) re-runs it.
+
+### Figures and plots
+
+The background MATLAB runs with full graphics (`-nodesktop`, not `-nodisplay`),
+so `plot`, `surf`, `imagesc`, `subplot`, App Designer-style UI figures and the
+rest open as normal, interactive MATLAB figure windows — rotate, zoom, data tips
+and all — wherever there is a display:
+
+- **macOS** — native windows. MATLAB runs without a Dock icon, so use Mission Control or `Cmd-`` to find them if they open behind the terminal.
+- **Rocky/RHEL desktop** — native X11/Wayland windows.
+- **Rocky/RHEL over SSH** — connect with `ssh -Y` (XQuartz on the Mac) *before* starting Neovim; the display is inherited by MATLAB. Complex 3D plots are slow over X forwarding; `opengl software` in the session helps, and a remote desktop (VNC, X2Go) is better still.
+- **No display at all** — MATLAB still renders figures, invisibly. `<leader>mf` exports every open figure to PNG (under `~/.cache/nvim/matlab-figures/`) and opens them in the system viewer, or lists the files when there is nothing to open them on.
+
+Figures close when Neovim exits, since the session goes with it. On exit the
+config asks MATLAB to quit (`close all force`, then `exit`) instead of leaving
+the language server to kill it: MATLAB treats a kill as a crash once any figure
+has been drawn, and the crash reporter would open after every session. MATLAB
+takes 15–20 seconds to finish shutting down after that, in the background.
+
+### Other
+
+- **`]]` / `[[`** jump between `%%` sections.
+- **`input()` / `keyboard`** prompts from a running script appear as a Neovim prompt; cancelling it interrupts the script.
+- **Tests** are not wired into neotest; run `runtests` via `<leader>mc`.
+
 ## Python virtualenvs
 
 pyright and debugpy both default to whatever `python3` is first on `$PATH`,
@@ -702,7 +817,9 @@ into. The failure is quiet rather than loud: imports resolve as missing, types
 degrade to `Unknown`, and the debugger runs the wrong interpreter.
 
 `lua/config/venv.lua` walks up from the project root looking for `.venv`,
-`venv`, `.env` or `env` (an activated `$VIRTUAL_ENV` wins over all of them) and
+`venv`, `.env` or `env` (an activated `$VIRTUAL_ENV`, or an activated conda env
+other than `base`, wins over all of them; conda `base` is the last resort before
+`$PATH`) and
 feeds the result to pyright, debugpy, neotest's pytest runner, and `<leader>br`.
 No plugin, no `fd`, nothing to configure — so it behaves identically on the
 air-gapped hosts.
@@ -738,6 +855,9 @@ vim.g.build_cmd = "ninja -C out/debug"        -- overrides <leader>bb detection
 vim.g.run_cmd   = "./out/debug/server --config dev.toml"
 vim.g.gdb_path  = "/opt/toolchain/bin/arm-none-eabi-gdb"  -- used by the DAP configs
 vim.g.clangd_query_driver = "/opt/toolchain/bin/arm-none-eabi-*"  -- see C/C++ setup
+vim.g.cuda_home = "/usr/local/cuda-12.4"      -- pin a CUDA toolkit (see CUDA)
+vim.g.matlab_setup = "run('tools/setup_paths.m')"  -- MATLAB path setup (see MATLAB)
+vim.g.matlab_install_path = "/usr/local/MATLAB/R2024b"  -- pin a MATLAB release
 ```
 
 `.nvim.lua` is sourced before the first buffer is read, so settings the LSP
@@ -756,9 +876,10 @@ a CI formatting gate where forgetting once costs a round trip.
 
 | Filetype | Formatter |
 | :--- | :--- |
-| C / C++ | `clang-format` |
+| C / C++ / CUDA | `clang-format` |
 | CMake | `cmake-format` |
-| Python | `black`, `isort` |
+| Python | `ruff` (import sort + format); `isort` + `black` when the project configures `[tool.black]`/`[tool.isort]` or has `.isort.cfg` |
+| MATLAB | matlab_ls (MATLAB's own indenter; needs MATLAB) |
 | JS / TS / HTML / CSS / JSON / YAML / Markdown | `prettier` |
 | Lua | `stylua` |
 | Shell | `shfmt` |

@@ -8,6 +8,9 @@
 -- inside C/C++ comments, jsdoc inside JS/TS comments.
 return {
   "c", "cpp", "python",
+  -- cuda extends the cpp grammar (__global__, <<<grid, block>>>); matlab
+  -- replaces the regex syntax file, which gets block comments and strings wrong
+  "cuda", "matlab",
   "javascript", "typescript", "tsx",
   "html", "css", "json", "yaml", "toml",
   "lua", "vim", "vimdoc", "bash",

@@ -152,6 +152,7 @@ return {
         o = true, a = true, so = true, dylib = true, lo = true, la = true, d = true,
         cmake = true, txt = true, json = true, ninja = true, make = true, log = true,
         h = true, hpp = true, c = true, cpp = true, sh = true, py = true, ["1"] = true,
+        cu = true, cuh = true, ptx = true, cubin = true, fatbin = true, m = true, mat = true,
       }
 
       local last_choice = {}
@@ -371,8 +372,35 @@ return {
       else
         cpp_launch = vim.list_extend(vim.deepcopy(gdb_cfgs), lldb_cfgs)
       end
-      dap.configurations.c   = cpp_launch
-      dap.configurations.cpp = cpp_launch
+      -- cuda-gdb is gdb with GPU awareness (kernel breakpoints, `cuda thread`,
+      -- device memory) and speaks the same GDB/MI, so it is just cpptools with
+      -- a different miDebuggerPath. Offered only where the toolkit has it —
+      -- Linux, never macOS. It debugs host code as well as plain gdb does, so
+      -- it goes first for .cu buffers and last for C/C++ (whose main() is
+      -- often what launches the kernels).
+      local cuda_gdb = require("config.cuda").bin("cuda-gdb")
+      local cuda_cfgs = {}
+      if cuda_gdb then
+        cuda_cfgs = {
+          {
+            name = "Launch (cuda-gdb)",
+            type = "cppdbg",
+            request = "launch",
+            program = pick_executable,
+            args = prompt_args,
+            cwd = "${workspaceFolder}",
+            stopAtEntry = false,
+            MIMode = "gdb",
+            miDebuggerPath = cuda_gdb,
+            setupCommands = pretty,
+            externalConsole = false,
+          },
+        }
+      end
+
+      dap.configurations.c    = vim.list_extend(vim.deepcopy(cpp_launch), cuda_cfgs)
+      dap.configurations.cpp  = dap.configurations.c
+      dap.configurations.cuda = vim.list_extend(vim.deepcopy(cuda_cfgs), cpp_launch)
 
       -- Per-project overrides (miDebuggerPath, args, gdbserver address, …) come
       -- from .vscode/launch.json, which nvim-dap reads automatically on demand
@@ -438,6 +466,16 @@ return {
       for _, ft in ipairs({ "javascript", "typescript", "javascriptreact", "typescriptreact" }) do
         dap.configurations[ft] = js_launch
       end
+
+      -- ── MATLAB, via the debug adapter inside matlab_ls ──────────────────────
+      -- Debugs in the language server's background MATLAB, so the project
+      -- path set up there applies. Breakpoints, conditional breakpoints,
+      -- stepping, call stack, locals and hover/watch evaluation all work;
+      -- see lua/config/matlab_dap.lua for how it is bridged.
+      dap.adapters.matlab = function(callback, config)
+        require("config.matlab_dap").adapter(callback, config)
+      end
+      dap.configurations.matlab = require("config.matlab_dap").configurations
 
       -- ── Bash via bash-debug-adapter (bashdb) ────────────────────────────────
       -- bashdb needs bash >= 4 to run the debugged script; macOS /bin/bash is

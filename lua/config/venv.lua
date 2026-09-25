@@ -43,6 +43,13 @@ function M.python(root)
     local active = interpreter(vim.env.VIRTUAL_ENV)
     if active then return active end
   end
+  -- An activated conda env is the same kind of explicit choice — except
+  -- `base`, which conda activates in every shell by default and so says
+  -- nothing about this project. A project .venv outranks it (below).
+  if vim.env.CONDA_PREFIX and vim.env.CONDA_DEFAULT_ENV ~= "base" then
+    local active = interpreter(vim.env.CONDA_PREFIX)
+    if active then return active end
+  end
 
   if cache[root] ~= nil then
     -- false is the memoised "searched, found nothing" answer
@@ -56,6 +63,12 @@ function M.python(root)
       found = interpreter(dir)
       if found then break end
     end
+  end
+
+  -- Last resort before the $PATH python: conda's base env, which is where
+  -- numpy & co. live for anyone who never made a project env
+  if not found and vim.env.CONDA_PREFIX then
+    found = interpreter(vim.env.CONDA_PREFIX)
   end
 
   cache[root] = found or false

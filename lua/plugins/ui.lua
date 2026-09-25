@@ -183,6 +183,7 @@ return {
         { "<leader>g", group = "Git" },
         { "<leader>h", group = "Hunks" },
         { "<leader>l", group = "LSP" },
+        { "<leader>m", group = "MATLAB" },
         { "<leader>q", group = "Session" },
         { "<leader>r", group = "Refactor/Replace" },
         { "<leader>s", group = "Swap (treesitter)" },

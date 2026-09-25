@@ -74,15 +74,38 @@ return {
       -- Install and enable servers (list: lua/config/servers.lua, which
       -- rpm/build-rpm.sh reads directly when baking the offline payload)
       local servers = require("config.servers")
+
+      -- Servers Mason has no build of for this machine, mapped to the distro
+      -- package that provides them instead. clangd is the only one today: its
+      -- releases cover macOS and Linux x86_64, not Linux aarch64. Asking Mason
+      -- anyway fails on every start-up, and since mason-lspconfig only enables
+      -- what Mason installed, C/C++/CUDA would silently get no server at all.
+      local uname = vim.uv.os_uname()
+      local from_system = {}
+      if uname.sysname == "Linux" and (uname.machine == "aarch64" or uname.machine == "arm64") then
+        from_system.clangd = "clang-tools-extra"
+      end
+      local via_mason = vim.tbl_filter(function(s) return not from_system[s] end, servers)
+
       require("mason-lspconfig").setup({
-        ensure_installed = servers,
+        ensure_installed = via_mason,
         -- Enable exactly these, rather than the default "every installed Mason
         -- package whose name matches an lspconfig server". That default also
         -- catches formatters: `stylua` has a `stylua --lsp` entry in
         -- nvim-lspconfig, so installing it for conform silently started a
         -- second, redundant server on every Lua buffer.
-        automatic_enable = servers,
+        automatic_enable = via_mason,
       })
+
+      -- The system-provided ones are enabled directly, from $PATH
+      for server, package in pairs(from_system) do
+        if vim.fn.executable(server) == 1 then
+          vim.lsp.enable(server)
+        else
+          vim.notify(("%s: Mason has no %s build for this platform — install it with `dnf install %s`")
+            :format(server, uname.machine, package), vim.log.levels.WARN)
+        end
+      end
 
       -- Neovim ships gr-prefixed LSP defaults, and we rebind every one of them
       -- below (gr, <leader>rn, <leader>a, gi, gy). Leaving any in place makes
@@ -273,8 +296,24 @@ return {
         "--pch-storage=memory",
       }
 
+      -- The default covers the native gcc drivers of both halves of the fleet.
+      -- It matters on RHEL/Rocky even without cross-compiling: clangd's own
+      -- GCC detection scans /opt/rh and picks the *newest* gcc-toolset's
+      -- libstdc++, so a project built with the system gcc 8/11 (or an older
+      -- toolset) is analysed against headers it never compiles with — C++20
+      -- library features that "exist" in the editor and fail in the build, or
+      -- the reverse. Querying the actual driver makes clangd see what the
+      -- build sees. Only drivers named in compile_commands.json ever run.
+      local default_query_driver = table.concat({
+        "/usr/bin/gcc*", "/usr/bin/g++*", "/usr/bin/cc", "/usr/bin/c++",
+        "/usr/local/bin/gcc*", "/usr/local/bin/g++*",
+        "/opt/rh/gcc-toolset-*/root/usr/bin/gcc", "/opt/rh/gcc-toolset-*/root/usr/bin/g++",
+        "/opt/rh/gcc-toolset-*/root/usr/bin/cc", "/opt/rh/gcc-toolset-*/root/usr/bin/c++",
+        "/opt/homebrew/bin/gcc-*", "/opt/homebrew/bin/g++-*",
+      }, ",")
       local query_driver = vim.g.clangd_query_driver or vim.env.CLANGD_QUERY_DRIVER
-      if query_driver then
+        or default_query_driver
+      if query_driver ~= "" then
         table.insert(clangd_cmd, "--query-driver=" .. query_driver)
       end
 
@@ -318,6 +357,27 @@ return {
                 callArgumentNames    = true,
               },
             },
+          },
+        },
+      })
+
+      -- MATLAB. lspconfig ships installPath = "", which makes the server spend
+      -- its start-up failing to launch MATLAB and saying so in a popup on
+      -- every .m file. Point it at the install, or — on a machine with none,
+      -- such as a Mac used only for editing — tell it not to try: completion
+      -- from the workspace index and syntax-level features still work.
+      local matlab_root = require("config.matlab").install_path()
+      vim.lsp.config("matlab_ls", {
+        -- The server's MATLAB doubles as the run/debug session: these receive
+        -- its output, prompts and debug-adapter traffic
+        -- (lua/config/matlab_session.lua).
+        handlers = require("config.matlab_session").handlers,
+        settings = {
+          MATLAB = {
+            installPath            = matlab_root or "",
+            matlabConnectionTiming = matlab_root and "onStart" or "never",
+            indexWorkspace         = true,
+            telemetry              = false,
           },
         },
       })

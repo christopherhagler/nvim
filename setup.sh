@@ -182,6 +182,10 @@ check_optional_deps() {
   )
   # gdb drives C/C++ debugging on Linux only; macOS uses codelldb
   [ "$(uname -s)" = "Linux" ] && items+=("gdb:gdb (C/C++ debugging via cpptools)")
+  # Mason ships clangd for macOS and Linux x86_64 only; Linux ARM64 uses the
+  # distro's (lua/plugins/lsp.lua enables it from $PATH)
+  [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "aarch64" ] \
+    && items+=("clangd:clangd (C/C++/CUDA LSP; no Mason build for Linux ARM64 — dnf install clang-tools-extra)")
 
   local any_missing=0
   for item in "${items[@]}"; do
@@ -394,6 +398,7 @@ cmd_health() {
     "cmake:cmake" "bear:bear"
   )
   [ "$(uname -s)" = "Linux" ] && tools+=("gdb:gdb")
+  [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "aarch64" ] && tools+=("clangd:clangd (system; Mason has none for ARM64)")
 
   for entry in "${tools[@]}"; do
     # First colon only, as in check_optional_deps above
@@ -441,6 +446,31 @@ cmd_health() {
     ok "  bash >= 4 for bashdb (${bash4_ver} at ${bash4})"
   else
     warn "  bash >= 4 — not found; bash debugging needs it (macOS: brew install bash)"
+  fi
+
+  # Optional language toolchains. Reported, never counted as failures: most
+  # machines have one or neither. Search order mirrors lua/config/cuda.lua and
+  # lua/config/matlab.lua, since neither toolchain is usually on $PATH.
+  local cuda="${CUDA_HOME:-${CUDA_PATH:-}}"
+  [ -z "$cuda" ] && command -v nvcc &>/dev/null && cuda=$(dirname "$(dirname "$(readlink -f "$(command -v nvcc)")")")
+  [ -z "$cuda" ] && [ -x /usr/local/cuda/bin/nvcc ] && cuda=/usr/local/cuda
+  if [ -n "$cuda" ] && [ -x "$cuda/bin/nvcc" ]; then
+    local cver; cver=$("$cuda/bin/nvcc" --version 2>/dev/null | grep -oE 'release [0-9.]+' | head -1) || true
+    ok "  CUDA toolkit: $cuda${cver:+ ($cver)}"
+    [ -x "$cuda/bin/cuda-gdb" ] && ok "  cuda-gdb: $cuda/bin/cuda-gdb" \
+      || info "  cuda-gdb — not found (kernel debugging unavailable; host code still debugs with gdb)"
+  else
+    info "  CUDA toolkit — not found (optional; set CUDA_HOME if installed elsewhere)"
+  fi
+  local matlab=""
+  command -v matlab &>/dev/null && matlab=$(readlink -f "$(command -v matlab)")
+  [ -z "$matlab" ] && matlab=$(ls -d /usr/local/MATLAB/R*/bin/matlab /Applications/MATLAB_R*.app/bin/matlab 2>/dev/null | sort | tail -1) || true
+  if [ -n "$matlab" ]; then
+    ok "  MATLAB: $matlab"
+  elif command -v octave &>/dev/null; then
+    ok "  Octave (MATLAB not found; .m files run with octave, matlab_ls has no diagnostics)"
+  else
+    info "  MATLAB/Octave — not found (optional; matlab_ls still indexes and completes)"
   fi
   echo ""
   info "clangd, formatters, linters, and debug adapters are managed by Mason —"

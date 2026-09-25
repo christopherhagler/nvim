@@ -12,6 +12,25 @@ return {
         .. "ColumnLimit: 120, BreakBeforeBraces: Attach, "
         .. "AllowShortFunctionsOnASingleLine: None, PointerAlignment: Right, SortIncludes: true}"
 
+      -- Python: ruff by default. It is already running as the lint server, it
+      -- reads the same [tool.ruff] config, and it formats and sorts imports in
+      -- one native process where black + isort are two Python interpreter
+      -- start-ups per save. Its output is black-compatible, but it does not
+      -- read [tool.black] or [tool.isort] — so a project configured for those
+      -- tools keeps getting them, the way a project .clang-format wins below.
+      local function python_formatters(bufnr)
+        local dir = vim.fs.dirname(vim.api.nvim_buf_get_name(bufnr))
+        local pyproject = vim.fs.find("pyproject.toml", { upward = true, path = dir })[1]
+        local legacy = vim.fs.find({ ".isort.cfg" }, { upward = true, path = dir })[1] ~= nil
+        if pyproject and not legacy then
+          local ok, lines = pcall(vim.fn.readfile, pyproject)
+          local text = ok and table.concat(lines, "\n") or ""
+          legacy = text:find("%[tool%.black%]") ~= nil or text:find("%[tool%.isort%]") ~= nil
+        end
+        if legacy then return { "isort", "black" } end
+        return { "ruff_organize_imports", "ruff_format" }
+      end
+
       require("conform").setup({
         formatters = {
           -- shfmt indents with hard tabs unless told otherwise; match the
@@ -30,8 +49,11 @@ return {
         formatters_by_ft = {
           c          = { "clang_format" },
           cpp        = { "clang_format" },
+          cuda       = { "clang_format" },
           cmake      = { "cmake_format" },
-          python     = { "black", "isort" },
+          python     = python_formatters,
+          -- matlab: no entry on purpose. <leader>lf falls back to matlab_ls,
+          -- which formats through MATLAB's own indenter (needs MATLAB).
           javascript = { "prettier" },
           typescript = { "prettier" },
           javascriptreact = { "prettier" },

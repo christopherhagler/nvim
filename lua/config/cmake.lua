@@ -198,6 +198,60 @@ local function request_file_api(build_dir)
   if not vim.uv.fs_stat(path) then vim.fn.writefile({}, path) end
 end
 
+-- Whether the project compiles CUDA as a language (not merely links the
+-- toolkit's libraries). The configured cache is the definitive answer; before
+-- the first configure, the top-level CMakeLists.txt is the best available one.
+local function uses_cuda(root, build_dir)
+  local cache = io.open(build_dir .. "/CMakeCache.txt", "r")
+  if cache then
+    local content = cache:read("*a")
+    cache:close()
+    if content:find("\nCMAKE_CUDA_COMPILER:") then return true end
+  end
+  local f = io.open(root .. "/CMakeLists.txt", "r")
+  if not f then return false end
+  local content = f:read("*a")
+  f:close()
+  return content:find("project%s*%([^)]*CUDA") ~= nil
+    or content:find("enable_language%s*%(%s*CUDA") ~= nil
+end
+
+-- nvcc builds pass their -I paths through a response file, so the exported
+-- compile_commands.json says `--options-file includes_CUDA.rsp` where the
+-- include paths should be. clangd cannot read nvcc response files, and every
+-- project header in a .cu file then reports as not found.
+--
+-- A -DCMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES=OFF on the command line does
+-- nothing: CMake's Compiler/NVIDIA.cmake sets it with a plain set(), which
+-- shadows the cache entry. It has to be overridden after that module runs,
+-- which is what CMAKE_PROJECT_INCLUDE is for (CMake 3.15+) — a file included as
+-- the last step of project(), in the scope project() was called from.
+local CUDA_INCLUDE = vim.fn.stdpath("data") .. "/cmake/nvim-cuda-compile-commands.cmake"
+
+local function cuda_project_include()
+  if not vim.uv.fs_stat(CUDA_INCLUDE) then
+    vim.fn.mkdir(vim.fn.fnamemodify(CUDA_INCLUDE, ":h"), "p")
+    vim.fn.writefile({
+      "# Written by the Neovim config (lua/config/cmake.lua). Keeps nvcc's include",
+      "# paths out of response files so clangd can read compile_commands.json.",
+      "if(CMAKE_CUDA_COMPILER_ID STREQUAL \"NVIDIA\")",
+      "  set(CMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES 0)",
+      "endif()",
+    }, CUDA_INCLUDE)
+  end
+  return CUDA_INCLUDE
+end
+
+-- A project may use CMAKE_PROJECT_INCLUDE for its own purposes; never replace it
+local function project_include_taken(build_dir)
+  local f = io.open(build_dir .. "/CMakeCache.txt", "r")
+  if not f then return false end
+  local content = f:read("*a")
+  f:close()
+  local value = content:match("\nCMAKE_PROJECT_INCLUDE:[^=]*=([^\n]*)")
+  return value ~= nil and value ~= "" and value ~= CUDA_INCLUDE
+end
+
 -- ── Command lines ────────────────────────────────────────────────────────────
 
 --- argv for the configure step. Shared with :CompileCommands
@@ -220,6 +274,11 @@ function M.configure_argv(root)
     end
   end
   table.insert(argv, "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
+  -- See cuda_project_include above. CUDA projects only, and never over a
+  -- project's own CMAKE_PROJECT_INCLUDE.
+  if uses_cuda(r, build) and not project_include_taken(build) then
+    table.insert(argv, "-DCMAKE_PROJECT_INCLUDE=" .. cuda_project_include())
+  end
   return argv, r
 end
 

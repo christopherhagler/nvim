@@ -70,6 +70,29 @@ local function link_to_root(root, build_dir)
   end
 end
 
+-- A compile database from an nvcc build is unreadable to clangd as-is (see
+-- lua/config/cuda.lua), so a project that compiles any .cu file also needs the
+-- CUDA section of .clangd. Written only if there is no .clangd yet: an existing
+-- one is the project's, and appending to it risks duplicating what it has.
+local function ensure_cuda_clangd(root)
+  -- Both paths put it (or a link to it) at the root: bear writes it there,
+  -- link_to_root does for cmake
+  local ok, lines = pcall(vim.fn.readfile, root .. "/compile_commands.json")
+  if not ok or not table.concat(lines, "\n"):find('%.cuh?"') then return end
+
+  local path = root .. "/.clangd"
+  if vim.uv.fs_stat(path) then
+    local existing = table.concat(vim.fn.readfile(path), "\n")
+    if not existing:find("cuda", 1, true) then
+      notify(".clangd exists but has no CUDA section — clangd will reject nvcc's flags in .cu files. "
+        .. "See require('config.cuda').clangd_fragment() for what to add.", vim.log.levels.WARN)
+    end
+    return
+  end
+  vim.fn.writefile(require("config.cuda").clangd_fragment(), path)
+  notify("Wrote " .. path .. " (CUDA flags for clangd)")
+end
+
 local function run(cmd, root, on_ok)
   notify("Running: " .. table.concat(cmd, " "))
   vim.system(cmd, { cwd = root, text = true }, vim.schedule_wrap(function(res)
@@ -141,6 +164,10 @@ local function write_clangd_config(root)
       })
     end
   end
+  -- Scoped to .cu/.cuh by its own PathMatch, so harmless in a tree without them
+  if require("config.cuda").home() then
+    vim.list_extend(lines, require("config.cuda").clangd_fragment())
+  end
   vim.fn.writefile(lines, path)
   notify("Wrote " .. path .. " (fallback flags only)")
   restart_clangd()
@@ -162,6 +189,7 @@ function M.generate()
     local build = cmake.binary_dir(root)
     run(cmake.configure_argv(root), root, function()
       link_to_root(root, build)
+      ensure_cuda_clangd(root)
       notify("compile_commands.json generated (cmake)")
       restart_clangd()
     end)
@@ -186,6 +214,7 @@ function M.generate()
     local cmd = major >= 3 and { "bear", "--", "make", "-B" } or { "bear", "make", "-B" }
 
     run(cmd, root, function()
+      ensure_cuda_clangd(root)
       notify("compile_commands.json generated (bear + make)")
       restart_clangd()
     end)

@@ -16,6 +16,9 @@ return {
   "jsonls",  -- JSON (schemas from schemastore)
   "lua_ls",  -- Lua (for editing this config)
   "bashls",  -- Bash/Shell (runs shellcheck itself)
+  "matlab_ls", -- MATLAB (MathWorks' server; Node-based, so it runs on EL8).
+               -- Most features are MATLAB itself answering over a connection,
+               -- so it needs an install to be useful — see lua/config/matlab.lua.
   -- Deliberately not here:
   --
   --   asm_lsp — a Rust binary from GitHub releases, built against a newer glibc
