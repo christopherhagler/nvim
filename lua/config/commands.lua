@@ -94,3 +94,22 @@ command("FormatOnSave", function()
   end
   vim.notify("Format on save: " .. (vim.g.format_on_save and "on" or "off"))
 end, { desc = "Toggle format-on-save for this session" })
+
+-- Trailing-whitespace trimming on save (lua/config/autocmds.lua). Per buffer
+-- by default; with a bang, for every buffer this session. A project that wants
+-- it off permanently sets vim.g.notrim = true in its .nvim.lua.
+command("TrimToggle", function(opts)
+  local scope = opts.bang and vim.g or vim.b
+  scope.notrim = not scope.notrim
+  vim.notify(("Trim whitespace on save (%s): %s"):format(
+    opts.bang and "all buffers" or "this buffer", scope.notrim and "off" or "on"))
+end, { bang = true, desc = "Toggle trailing-whitespace trim on save (! for all buffers)" })
+
+-- ── Python ────────────────────────────────────────────────────────────────────
+-- After creating a venv mid-session: forget the cached interpreter lookups and
+-- restart pyright so it re-resolves its pythonPath (lua/config/venv.lua).
+command("VenvRefresh", function()
+  require("config.venv").refresh()
+  if #vim.lsp.get_clients({ name = "pyright" }) > 0 then vim.cmd("lsp restart pyright") end
+  vim.notify("Python interpreter: " .. (require("config.venv").python() or "python3 from $PATH"))
+end, { desc = "Re-detect the project's virtualenv and restart pyright" })

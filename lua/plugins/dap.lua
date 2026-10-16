@@ -21,9 +21,19 @@ return {
             if cond and cond ~= "" then require("dap").set_breakpoint(cond) end
           end)
         end, desc = "Conditional breakpoint" },
+      -- Stepping on the leader as well as the F-keys: GNOME Terminal takes F10
+      -- (menu) and F11 (fullscreen), Konsole and Windows Terminal take F11,
+      -- shifted F-keys arrive as <F17>-style codes under tmux, and macOS needs
+      -- Fn for all of them. Without these a session could be started but not
+      -- stepped.
+      { "<leader>dc", function() require("dap").continue() end,  desc = "Continue / start" },
+      { "<leader>dn", function() require("dap").step_over() end, desc = "Step over (next)" },
+      { "<leader>di", function() require("dap").step_into() end, desc = "Step into" },
+      { "<leader>do", function() require("dap").step_out() end,  desc = "Step out" },
+      { "<leader>dp", function() require("dap").pause() end,     desc = "Pause" },
       -- Stop where the cursor is without leaving a breakpoint behind — the
       -- "why is it not reaching this line" question, answered in one key.
-      { "<leader>dc", function() require("dap").run_to_cursor() end, desc = "Run to cursor" },
+      { "<leader>dC", function() require("dap").run_to_cursor() end, desc = "Run to cursor" },
       -- Break on a raised exception / a signal / a failed assert, chosen from
       -- the list the adapter itself reports (differs per language).
       { "<leader>de", function() require("dap").set_exception_breakpoints() end, desc = "Exception breakpoints" },
@@ -33,8 +43,8 @@ return {
       { "<leader>du", function() require("dapui").toggle() end,    desc = "Toggle debug UI" },
       -- Evaluate the expression under the cursor, or the visual selection
       { "<leader>dv", function() require("dapui").eval(nil, { enter = true }) end,
-        mode = { "n", "v" }, desc = "Evaluate expression" },
-      { "<leader>dC", function() require("dap").clear_breakpoints() end, desc = "Clear all breakpoints" },
+        mode = { "n", "x" }, desc = "Evaluate expression" },
+      { "<leader>dx", function() require("dap").clear_breakpoints() end, desc = "Clear all breakpoints" },
 
       -- VSCode-style function-key debugging
       { "<F5>",    function() require("dap").continue() end,          desc = "Debug: Continue / Start" },
@@ -241,9 +251,15 @@ return {
         table.insert(candidates, MANUAL)
 
         return coroutine.create(function(dap_co)
+          -- nvim-dap aborts the launch only for dap.ABORT; handing back nil
+          -- started the adapter with no program at all.
           local function finish(path)
-            if path and path ~= "" then last_choice[root] = path end
-            coroutine.resume(dap_co, path)
+            if path and path ~= "" then
+              last_choice[root] = path
+              coroutine.resume(dap_co, path)
+            else
+              coroutine.resume(dap_co, require("dap").ABORT)
+            end
           end
 
           vim.ui.select(candidates, {
@@ -256,7 +272,7 @@ return {
             end,
           }, function(choice)
             if choice == nil then
-              finish(nil) -- cancelled: dap aborts the launch
+              finish(nil) -- cancelled: abort the launch
             elseif choice == MANUAL then
               vim.ui.input({ prompt = "Executable: ", default = root .. "/", completion = "file" }, finish)
             else
@@ -266,15 +282,46 @@ return {
         end)
       end
 
-      -- Program arguments, asked for only by the "with arguments" configs so
-      -- the common case stays a single keypress.
-      local function prompt_args()
-        return coroutine.create(function(dap_co)
-          vim.ui.input({ prompt = "Program arguments: " }, function(input)
-            coroutine.resume(dap_co, vim.split(input or "", " +", { trimempty = true }))
-          end)
-        end)
+      -- Split an argument string the way a shell would, so "a b" and 'a b'
+      -- stay one argument. No expansion: what you type is what the program
+      -- receives.
+      local function split_args(input)
+        local args, cur, quote, has = {}, {}, nil, false
+        local i = 1
+        while i <= #input do
+          local c = input:sub(i, i)
+          if quote then
+            if c == quote then quote = nil
+            elseif c == "\\" and quote == '"' and i < #input then i = i + 1; table.insert(cur, input:sub(i, i))
+            else table.insert(cur, c) end
+          elseif c == '"' or c == "'" then quote, has = c, true
+          elseif c == "\\" and i < #input then i = i + 1; table.insert(cur, input:sub(i, i)); has = true
+          elseif c:match("%s") then
+            if has or #cur > 0 then table.insert(args, table.concat(cur)) end
+            cur, has = {}, false
+          else table.insert(cur, c); has = true end
+          i = i + 1
+        end
+        if has or #cur > 0 then table.insert(args, table.concat(cur)) end
+        return args
       end
+
+      -- Program arguments, asked for only by the "with arguments" configs so
+      -- the common case stays a single keypress. <Esc> cancels the launch.
+      local function prompt_args(prompt)
+        return function()
+          return coroutine.create(function(dap_co)
+            vim.ui.input({ prompt = prompt or "Program arguments: " }, function(input)
+              coroutine.resume(dap_co, input and split_args(input) or require("dap").ABORT)
+            end)
+          end)
+        end
+      end
+
+      -- ${workspaceFolder} in nvim-dap is the cwd, not the project: open a
+      -- file by path from elsewhere and the debuggee ran from the wrong
+      -- directory. The project root is what builds and tests use too.
+      local function project_root() return require("config.project").root() end
 
       local pretty = {
         { text = "-enable-pretty-printing", description = "enable pretty printing", ignoreFailures = false },
@@ -287,7 +334,7 @@ return {
           type = "codelldb",
           request = "launch",
           program = pick_executable,
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           stopOnEntry = false,
           args = {},
           -- Without a real terminal the debuggee's stdout is swallowed and
@@ -299,9 +346,9 @@ return {
           type = "codelldb",
           request = "launch",
           program = pick_executable,
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           stopOnEntry = false,
-          args = prompt_args,
+          args = prompt_args(),
           terminal = "integrated",
         },
         {
@@ -320,7 +367,7 @@ return {
           type = "cppdbg",
           request = "launch",
           program = pick_executable,
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           stopAtEntry = false,
           MIMode = "gdb",
           miDebuggerPath = gdb_path,
@@ -332,8 +379,8 @@ return {
           type = "cppdbg",
           request = "launch",
           program = pick_executable,
-          args = prompt_args,
-          cwd = "${workspaceFolder}",
+          args = prompt_args(),
+          cwd = project_root,
           stopAtEntry = false,
           MIMode = "gdb",
           miDebuggerPath = gdb_path,
@@ -355,11 +402,15 @@ return {
           type = "cppdbg",
           request = "launch",
           program = pick_executable,
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           MIMode = "gdb",
           miDebuggerPath = gdb_path,
           miDebuggerServerAddress = function()
-            return vim.fn.input("gdbserver address: ", "localhost:1234")
+            return coroutine.create(function(dap_co)
+              vim.ui.input({ prompt = "gdbserver address: ", default = "localhost:1234" }, function(addr)
+                coroutine.resume(dap_co, (addr and addr ~= "") and addr or require("dap").ABORT)
+              end)
+            end)
           end,
           setupCommands = pretty,
         },
@@ -398,8 +449,8 @@ return {
             type = "cppdbg",
             request = "launch",
             program = pick_executable,
-            args = prompt_args,
-            cwd = "${workspaceFolder}",
+            args = prompt_args(),
+            cwd = project_root,
             stopAtEntry = false,
             MIMode = "gdb",
             miDebuggerPath = cuda_gdb,
@@ -442,7 +493,7 @@ return {
           request = "launch",
           name = "Launch file",
           program = "${file}",
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           sourceMaps = true,
           -- Stepping through node's own internals is never the goal
           skipFiles = { "<node_internals>/**" },
@@ -452,7 +503,7 @@ return {
           request = "attach",
           name = "Attach to process",
           processId = require("dap.utils").pick_process,
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           sourceMaps = true,
           skipFiles = { "<node_internals>/**" },
         },
@@ -463,11 +514,11 @@ return {
           url = function()
             return coroutine.create(function(dap_co)
               vim.ui.input({ prompt = "Dev server URL: ", default = "http://localhost:3000" }, function(url)
-                coroutine.resume(dap_co, url)
+                coroutine.resume(dap_co, (url and url ~= "") and url or require("dap").ABORT)
               end)
             end)
           end,
-          webRoot = "${workspaceFolder}",
+          webRoot = project_root,
           sourceMaps = true,
         },
       }
@@ -514,7 +565,7 @@ return {
           name = name,
           program = "${file}",
           file = "${file}",
-          cwd = "${workspaceFolder}",
+          cwd = project_root,
           pathBashdb = bashdb_dir .. "/bashdb",
           pathBashdbLib = bashdb_dir,
           pathBash = debug_bash(),
@@ -529,9 +580,7 @@ return {
 
       dap.configurations.sh = {
         bash_config("Launch current script", {}),
-        bash_config("Launch with arguments", function()
-          return vim.split(vim.fn.input("Script arguments: "), " +", { trimempty = true })
-        end),
+        bash_config("Launch with arguments", prompt_args("Script arguments: ")),
       }
       dap.configurations.bash = dap.configurations.sh
     end,

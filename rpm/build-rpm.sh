@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# build-rpm.sh — build a fully offline RPM of this Neovim setup for RHEL 8 / Rocky 8.
+# build-rpm.sh — build a fully offline RPM of this Neovim setup for RHEL / Rocky.
 #
-# Run on an INTERNET-CONNECTED RHEL 8 / Rocky 8 x86_64 host:
+# Run on an INTERNET-CONNECTED RHEL / Rocky x86_64 host:
 #   bash rpm/build-rpm.sh
 # Produces:
-#   dist/nvim-config-<version>-1.el8.x86_64.rpm
+#   dist/nvim-config-<version>-1.el<N>.x86_64.rpm
+#
+# Which host to build on: the RPM runs on the EL major it was built on and every
+# later one that still ships its Python (the pip-based Mason tools — black,
+# isort, debugpy, yamllint, cmake-format — are compiled for one interpreter
+# version). An EL8 build (python3.11) covers EL8 and EL9. EL10 has no
+# python3.11, so it needs its own build, made on EL10 (python3.12).
 #
 # The RPM bundles everything an air-gapped box needs: Neovim (built from source
 # against EL8 glibc), Node.js, ripgrep, this config, all lazy.nvim plugins,
@@ -18,7 +24,7 @@ NVIM_TAG="${NVIM_TAG:-v0.12.2}"
 NODE_VERSION="${NODE_VERSION:-22.17.0}"
 RG_VERSION="${RG_VERSION:-14.1.1}"
 TS_CLI_VERSION="${TS_CLI_VERSION:-0.26.9}"
-PYTHON_BIN="${PYTHON_BIN:-python3.11}"   # debugpy venv python; RPM Requires must match
+PYTHON_BIN="${PYTHON_BIN:-}"             # debugpy venv python; default per EL major (preflight)
 
 PREFIX="/opt/nvim-config"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -53,12 +59,21 @@ preflight() {
   if [ -r /etc/os-release ]; then
     # shellcheck source=/dev/null
     . /etc/os-release
+    # The build host's glibc is the payload's floor, and its Python is the one
+    # the pip-based Mason tools are built for — see the header comment.
     case "${VERSION_ID:-}" in
-      8*) ok "Build host: ${NAME:-unknown} ${VERSION_ID}" ;;
-      *)  [ "${FORCE:-0}" = "1" ] || die "Build host is ${NAME:-?} ${VERSION_ID:-?}, not EL8 — binaries would link a newer glibc. Set FORCE=1 to override." ;;
+      8*|9*)
+        ok "Build host: ${NAME:-unknown} ${VERSION_ID}"
+        PYTHON_BIN="${PYTHON_BIN:-python3.11}" ;;
+      10*)
+        ok "Build host: ${NAME:-unknown} ${VERSION_ID} (this RPM will need EL10 or later)"
+        PYTHON_BIN="${PYTHON_BIN:-python3.12}" ;;
+      *)
+        [ "${FORCE:-0}" = "1" ] || die "Build host is ${NAME:-?} ${VERSION_ID:-?}, not EL8/9/10. Set FORCE=1 to override."
+        PYTHON_BIN="${PYTHON_BIN:-python3}" ;;
     esac
   else
-    die "No /etc/os-release — run this on a RHEL 8 / Rocky 8 host"
+    die "No /etc/os-release — run this on a RHEL / Rocky 8, 9 or 10 host"
   fi
 
   info "Checking build dependencies..."
@@ -307,6 +322,12 @@ bake_payload() {
   mkdir -p "$ROOT$PREFIX/home/config" "$ROOT$PREFIX/home/data"
   mv "$STAGE_HOME/.config/nvim" "$ROOT$PREFIX/home/config/nvim"
   mv "$STAGE_HOME/.local/share/nvim" "$ROOT$PREFIX/home/data/nvim"
+  # Mason's pip packages write absolute interpreter paths into their entry
+  # scripts (#!…/mason/packages/black/venv/bin/python), and bash-debug-adapter
+  # its wrapper's node path — all pointing into this synthetic HOME, which does
+  # not exist on the target. nvim-config-install rewrites this prefix to the
+  # user's data directory.
+  printf '%s\n' "$STAGE_HOME/.local/share/nvim" > "$ROOT$PREFIX/home/data/nvim/.bake-prefix"
   ok "Payload staged under $ROOT$PREFIX"
 }
 
@@ -376,7 +397,19 @@ LUA
       io.stdout:write('SMOKE OK: dap configs present\n')" \
     +qa || die "Offline smoke test failed on DAP configs"
 
-  ok "Offline smoke test passed (LSP + treesitter + DAP, zero network)"
+  # Mason tools that are scripts rather than binaries — the pip-based ones
+  # (Mason's clang-format is a Python wrapper too) and bash-debug-adapter —
+  # carry absolute paths that only work once nvim-config-install has
+  # relocated them. The LSP checks above never run any of these.
+  local tool
+  for tool in clang-format black isort stylua yamllint cmake-format; do
+    "${runner[@]}" -i HOME="$testhome" PATH="$ROOT$PREFIX/bin:/usr/bin:/bin" \
+      "$testhome/.local/share/nvim/mason/bin/$tool" --version >/dev/null \
+      || die "Offline smoke test: bundled $tool does not run after activation"
+  done
+  ok "Offline smoke test: bundled formatters and linters run"
+
+  ok "Offline smoke test passed (LSP + treesitter + DAP + tools, zero network)"
 }
 
 # ── Package ────────────────────────────────────────────────────────────────────
@@ -394,7 +427,7 @@ build_rpm() {
     --define "_topdir $WORK/rpmbuild" \
     --define "payload_root $ROOT" \
     --define "pkg_version $version" \
-    --define "python_dep $PYTHON_BIN" \
+    --define "python_dep $(command -v "$PYTHON_BIN")" \
     "$REPO_ROOT/rpm/nvim-config.spec"
 
   local out

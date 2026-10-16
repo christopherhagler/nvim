@@ -67,48 +67,11 @@ return {
       "neovim/nvim-lspconfig",
       "saghen/blink.cmp",
       { "b0o/schemastore.nvim", lazy = true },
-      { "j-hui/fidget.nvim",  opts = {} },
       { "folke/lazydev.nvim", ft = "lua", opts = {} },
     },
     config = function()
-      -- Install and enable servers (list: lua/config/servers.lua, which
-      -- rpm/build-rpm.sh reads directly when baking the offline payload)
-      local servers = require("config.servers")
-
-      -- Servers Mason has no build of for this machine, mapped to the distro
-      -- package that provides them instead. clangd is the only one today: its
-      -- releases cover macOS and Linux x86_64, not Linux aarch64. Asking Mason
-      -- anyway fails on every start-up, and since mason-lspconfig only enables
-      -- what Mason installed, C/C++/CUDA would silently get no server at all.
-      local uname = vim.uv.os_uname()
-      local from_system = {}
-      if uname.sysname == "Linux" and (uname.machine == "aarch64" or uname.machine == "arm64") then
-        from_system.clangd = "clang-tools-extra"
-      end
-      local via_mason = vim.tbl_filter(function(s) return not from_system[s] end, servers)
-
-      require("mason-lspconfig").setup({
-        ensure_installed = via_mason,
-        -- Enable exactly these, rather than the default "every installed Mason
-        -- package whose name matches an lspconfig server". That default also
-        -- catches formatters: `stylua` has a `stylua --lsp` entry in
-        -- nvim-lspconfig, so installing it for conform silently started a
-        -- second, redundant server on every Lua buffer.
-        automatic_enable = via_mason,
-      })
-
-      -- The system-provided ones are enabled directly, from $PATH
-      for server, package in pairs(from_system) do
-        if vim.fn.executable(server) == 1 then
-          vim.lsp.enable(server)
-        else
-          vim.notify(("%s: Mason has no %s build for this platform — install it with `dnf install %s`")
-            :format(server, uname.machine, package), vim.log.levels.WARN)
-        end
-      end
-
       -- Neovim ships gr-prefixed LSP defaults, and we rebind every one of them
-      -- below (gr, <leader>rn, <leader>a, gi, gy). Leaving any in place makes
+      -- below (gr, <leader>rn, <leader>a, gI, gy). Leaving any in place makes
       -- every `gr` press wait out 'timeoutlen' to see whether a second key
       -- follows — half a second of dead air on the most-used LSP mapping there
       -- is.
@@ -167,21 +130,25 @@ return {
           map("gd", vim.lsp.buf.definition,    "Go to definition")
           map("gD", vim.lsp.buf.declaration,   "Go to declaration")
           map("gy", vim.lsp.buf.type_definition, "Go to type definition")
-          map("gi", vim.lsp.buf.implementation, "Go to implementation")
+          -- gI, not gi: gi is Vim's "insert where you last stopped"
+          map("gI", vim.lsp.buf.implementation, "Go to implementation")
           map("gr", function() require("telescope.builtin").lsp_references() end, "Find references")
           map("K",  vim.lsp.buf.hover,         "Hover documentation")
 
           -- Actions
           map("<leader>rn", vim.lsp.buf.rename, "Rename symbol")
+          map("<leader>lr", vim.lsp.buf.rename, "Rename symbol")
           -- Visual mode as well as normal: a code action over a *range* is how
           -- clangd offers "extract function" and "extract variable", which are
           -- the two refactorings that only make sense on a selection. Without
           -- the visual binding they were unreachable except through the stock
           -- `gra` that the block above deletes.
-          map("<leader>a", vim.lsp.buf.code_action, "Code actions", { "n", "v" })
+          map("<leader>a", vim.lsp.buf.code_action, "Code actions", { "n", "x" })
+          -- The same two under the LSP group, where which-key lists them
+          map("<leader>la", vim.lsp.buf.code_action, "Code actions", { "n", "x" })
           map("<leader>re", function()
             vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
-          end, "Refactor", { "n", "v" })
+          end, "Refactor", { "n", "x" })
           -- Guarded like the type-hierarchy pair below: clangd has no CodeLens,
           -- so leaving this bound on a C++ buffer only offers a key that
           -- answers "not supported by any server".
@@ -207,8 +174,9 @@ return {
           -- formats plenty of filetypes that have no LSP server attached.
 
           -- Diagnostics
-          map("[g",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
-          map("]g",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
+          -- Neovim's own [d / ]d, plus the float showing the message
+          map("[d",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
+          map("]d",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
           map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to location list")
 
           -- Inlay hints and CodeLens are the only two features here that talk to
@@ -421,6 +389,50 @@ return {
           "javascript", "javascriptreact", "typescript", "typescriptreact",
         },
       })
+
+      -- Last, after every vim.lsp.config() above: enabling a server while
+      -- buffers are already open starts it for them immediately, and a server
+      -- started before its override was registered would run with the stock
+      -- config.
+      --
+      -- Install and enable servers (list: lua/config/servers.lua, which
+      -- rpm/build-rpm.sh reads directly when baking the offline payload)
+      local servers = require("config.servers")
+
+      -- Servers Mason has no build of for this machine, mapped to the distro
+      -- package that provides them instead. clangd is the only one today: its
+      -- releases cover macOS and Linux x86_64, not Linux aarch64. Asking Mason
+      -- anyway fails on every start-up, and since mason-lspconfig only enables
+      -- what Mason installed, C/C++/CUDA would silently get no server at all.
+      local uname = vim.uv.os_uname()
+      local from_system = {}
+      if uname.sysname == "Linux" and (uname.machine == "aarch64" or uname.machine == "arm64") then
+        from_system.clangd = "clang-tools-extra"
+      end
+      local via_mason = vim.tbl_filter(function(s) return not from_system[s] end, servers)
+
+      require("mason-lspconfig").setup({
+        -- Nothing to fetch on the air-gapped boxes (the offline RPM sets
+        -- NVIM_OFFLINE); a missing server there would otherwise retry a
+        -- network install on every start.
+        ensure_installed = vim.env.NVIM_OFFLINE and {} or via_mason,
+        -- Enable exactly these, rather than the default "every installed Mason
+        -- package whose name matches an lspconfig server". That default also
+        -- catches formatters: `stylua` has a `stylua --lsp` entry in
+        -- nvim-lspconfig, so installing it for conform silently started a
+        -- second, redundant server on every Lua buffer.
+        automatic_enable = via_mason,
+      })
+
+      -- The system-provided ones are enabled directly, from $PATH
+      for server, package in pairs(from_system) do
+        if vim.fn.executable(server) == 1 then
+          vim.lsp.enable(server)
+        else
+          vim.notify(("%s: Mason has no %s build for this platform — install it with `dnf install %s`")
+            :format(server, uname.machine, package), vim.log.levels.WARN)
+        end
+      end
     end,
   },
 }

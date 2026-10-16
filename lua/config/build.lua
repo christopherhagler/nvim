@@ -130,12 +130,16 @@ local function single_file_build()
   if ft ~= "c" and ft ~= "cpp" then return nil end
 
   local compiler = ft == "c" and (vim.env.CC or "cc") or (vim.env.CXX or "c++")
-  if vim.fn.executable(compiler) == 0 then
+  -- $CC may carry a launcher or flags ("ccache gcc", "clang -m32"): only the
+  -- first word is a program. The whole string is still what runs, unquoted, so
+  -- the shell splits it the same way make would.
+  local program = vim.split(vim.trim(compiler), "%s+")[1]
+  if vim.fn.executable(program) == 0 then
     vim.notify(("No %s compiler found (%s)"):format(ft == "c" and "C" or "C++", compiler), vim.log.levels.ERROR)
     return nil
   end
 
-  local std = M.supported_std(compiler, ft)
+  local std = M.supported_std(program, ft)
   return ("%s%s -Wall -Wextra -g -o %s %s"):format(
     compiler,
     std and (" -std=" .. std) or "",
@@ -163,7 +167,7 @@ function M.build_cmd()
     return "make", "make"
   elseif exists(root, "Cargo.toml") then
     return "cargo build", "cargo"
-  elseif exists(root, "package.json") then
+  elseif exists(root, "package.json") and M.has_build() then
     return "npm run build", "npm"
   end
 
@@ -173,6 +177,24 @@ function M.build_cmd()
 end
 
 local job = nil
+
+--- Whether build() would find something to build for the current buffer, used
+--- by <leader>bd: an interpreted file has no build step, and debugging it
+--- should not wait on one.
+function M.has_build()
+  if vim.g.build_cmd then return true end
+  local root = M.root()
+  for _, name in ipairs({ "CMakeLists.txt", "Makefile", "makefile", "Cargo.toml" }) do
+    if exists(root, name) then return true end
+  end
+  if exists(root, "package.json") then
+    -- npm run build with no "build" script is an error, not a no-op
+    local ok, pkg = pcall(vim.json.decode, table.concat(vim.fn.readfile(root .. "/package.json"), "\n"))
+    return ok and type(pkg) == "table" and type(pkg.scripts) == "table" and pkg.scripts.build ~= nil
+  end
+  local ft = vim.bo.filetype
+  return ft == "c" or ft == "cpp" or ft == "cuda"
+end
 
 --- Build the project asynchronously into the quickfix list.
 --- @param cmd string|nil overrides detection
@@ -193,11 +215,18 @@ function M.build(cmd, on_success)
   end
 
   local root = M.root()
-  local efm = ERRORFORMAT[vim.bo.filetype] or (NVCC_EFM .. "," .. vim.o.errorformat)
+  -- A language's own errorformat applies only when the build *is* that
+  -- language's file. A project build (cmake, make, a custom command) prints
+  -- compiler output whichever buffer it was started from — reading gcc errors
+  -- with the shell format from a .sh buffer gave an empty quickfix list.
+  local efm = (label == "single file" and ERRORFORMAT[vim.bo.filetype])
+    or (NVCC_EFM .. "," .. vim.o.errorformat)
   vim.cmd("silent! wall")
   vim.notify(("Building (%s): %s"):format(label, cmd), vim.log.levels.INFO)
 
-  job = vim.system({ "sh", "-c", cmd }, { cwd = root, text = true }, vim.schedule_wrap(function(res)
+  -- detach: the build gets its own process group, so <leader>bk can signal
+  -- cmake/make/the compilers as well as the sh wrapper (see stop()).
+  job = vim.system({ "sh", "-c", cmd }, { cwd = root, text = true, detach = true }, vim.schedule_wrap(function(res)
     job = nil
     -- Compilers write diagnostics to stderr and progress to stdout; the
     -- quickfix list wants both, in that order.
@@ -230,7 +259,11 @@ function M.stop()
     vim.notify("No build running", vim.log.levels.INFO)
     return
   end
-  job:kill(15) -- SIGTERM: let make reap its children rather than orphaning them
+  -- SIGTERM to the whole process group. Signalling only the sh wrapper left
+  -- cmake, make and the compilers running; they kept the output pipe open, so
+  -- the exit callback never fired and every later build reported "already
+  -- running".
+  if not vim.uv.kill(-job.pid, "sigterm") then job:kill("sigterm") end
   vim.notify("Build stopped", vim.log.levels.WARN)
 end
 
@@ -262,7 +295,7 @@ local function run_cmd()
     return nil
   elseif ft == "python" then
     -- The project's venv, not whatever python3 $PATH happens to point at
-    return (require("config.venv").python(M.root()) or "python3") .. " " .. file
+    return vim.fn.shellescape(require("config.venv").python(M.root()) or "python3") .. " " .. file
   elseif ft == "javascript" then
     return "node " .. file
   elseif ft == "typescript" or ft == "typescriptreact" or ft == "javascriptreact" then
@@ -324,6 +357,8 @@ function M.run()
   end
 
   vim.fn.jobstart(cmd, { cwd = root, term = true })
+  -- Terminal-mode keys (<Esc><Esc>, <C-h/j/k/l>, and <leader>br itself) come
+  -- from the global TermOpen autocmd in lua/config/autocmds.lua.
   vim.cmd("startinsert") -- so a program that reads stdin is immediately usable
 end
 

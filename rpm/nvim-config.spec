@@ -1,8 +1,10 @@
-# nvim-config.spec — offline Neovim development environment for EL8.
+# nvim-config.spec — offline Neovim development environment for EL8 and later.
 # Built by rpm/build-rpm.sh, which passes:
 #   --define "payload_root <staged / tree>"
 #   --define "pkg_version  <version>"
-#   --define "python_dep   <python3.1x>"   (must match the debugpy venv python)
+#   --define "python_dep   </usr/bin/python3.1x>"   (the debugpy venv python —
+#     a file dependency, which resolves whether the interpreter is the distro
+#     default python3 package, as on EL10, or a versioned one, as on EL8/9)
 
 # The payload is ~1 GB of third-party binaries (Neovim, Node.js, codelldb,
 # clangd, …). Disable everything that would rewrite or introspect them:
@@ -24,11 +26,11 @@ URL:            https://github.com/christopherhagler/nvim
 AutoReqProv:    no
 
 Requires:       git
-Requires:       %{?python_dep}%{!?python_dep:python3.11}
+Requires:       %{?python_dep}%{!?python_dep:/usr/bin/python3.11}
 
 %description
-Self-contained Neovim setup for air-gapped RHEL 8 / Rocky 8 systems.
-Bundles Neovim (built against EL8 glibc), Node.js, ripgrep, the editor
+Self-contained Neovim setup for air-gapped RHEL / Rocky systems.
+Bundles Neovim (built against the build host's glibc), Node.js, ripgrep, the editor
 configuration, all plugins, compiled treesitter parsers, and every Mason
 tool (LSP servers, formatters, linters, debug adapters) — no network
 access required at any point after installation.

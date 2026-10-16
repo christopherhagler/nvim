@@ -30,6 +30,7 @@ return {
     },
     keys = {
       { "<F8>", "<cmd>AerialToggle<cr>", desc = "Toggle symbols outline" },
+      { "<leader>o", "<cmd>AerialToggle<cr>", desc = "Toggle symbols outline" },
     },
     config = function()
       require("aerial").setup({
