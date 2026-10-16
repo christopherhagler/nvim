@@ -95,7 +95,22 @@ ask() {
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-version_gte() { printf '%s\n%s\n' "$2" "$1" | sort -V -C; }
+# version_gte <have> <need> — pure bash, numeric per dot-separated field.
+# Not `sort -V`: older macOS sort has no -V, and on BSD sort -C's exit status
+# under -V is not something to rely on.
+version_gte() {
+  local IFS=.
+  # shellcheck disable=SC2206
+  local have=($1) need=($2) i h n
+  for ((i = 0; i < ${#need[@]} || i < ${#have[@]}; i++)); do
+    h="${have[i]:-0}"; n="${need[i]:-0}"
+    h="${h%%[!0-9]*}"; n="${n%%[!0-9]*}"
+    h=$((10#${h:-0})); n=$((10#${n:-0}))
+    ((h > n)) && return 0
+    ((h < n)) && return 1
+  done
+  return 0
+}
 nvim_version() { nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; }
 
 # First version-looking token on the first line of `<cmd> --version`.
@@ -251,6 +266,51 @@ run_nvim_headless() {
   return 0
 }
 
+# Plugins at the commits in lazy-lock.json, then everything the first real
+# launch would otherwise fetch in the background with a flood of
+# notifications: treesitter parsers, LSP servers, formatters, linters and debug
+# adapters.
+#
+# `Lazy! restore`, not `Lazy! sync`: sync moves every plugin to its newest
+# commit and rewrites the lockfile, so a fresh install got versions nobody had
+# tested, and the next `update` stopped at "You have local changes" because of
+# the lockfile it had just rewritten itself.
+install_plugins_and_tools() {
+  info "Installing plugins (versions pinned in lazy-lock.json)..."
+  if run_nvim_headless "Lazy! restore"; then
+    ok "Plugins installed"
+  else
+    warn "Plugin install reported errors — open Neovim and run :Lazy to inspect"
+  fi
+
+  info "Compiling treesitter parsers (a few minutes the first time)..."
+  if run_nvim_headless "lua require('nvim-treesitter').install(require('config.parsers')):wait(1800000)"; then
+    ok "Treesitter parsers ready"
+  else
+    warn "Some parsers failed to build — Neovim will retry on start (needs the tree-sitter CLI and a C compiler)"
+  fi
+
+  info "Installing LSP servers, formatters, linters and debug adapters (Mason)..."
+  # One synchronous pass over servers *and* tools: mason-tool-installer maps
+  # lspconfig server names to Mason packages itself (via mason-lspconfig).
+  if run_nvim_headless "lua require('lazy').load({ plugins = { 'mason-lspconfig.nvim', 'mason-tool-installer.nvim' } })
+      local servers = require('config.servers')
+      local u = vim.uv.os_uname()
+      if u.sysname == 'Linux' and (u.machine == 'aarch64' or u.machine == 'arm64') then
+        -- no Mason clangd build there; lua/plugins/lsp.lua uses the distro's
+        servers = vim.tbl_filter(function(s) return s ~= 'clangd' end, servers)
+      end
+      require('mason-tool-installer').setup({
+        ensure_installed = vim.list_extend(vim.deepcopy(require('config.tools')), servers),
+        run_on_start = false,
+      })
+      vim.cmd('MasonToolsInstallSync')"; then
+    ok "Mason packages installed"
+  else
+    warn "Some Mason packages failed — open Neovim and run :Mason to inspect"
+  fi
+}
+
 # ── Commands ───────────────────────────────────────────────────────────────────
 cmd_install() {
   local confirm
@@ -285,19 +345,15 @@ cmd_install() {
     || die "Clone failed. Check your network connection."
   ok "Repository cloned"
 
-  info "Bootstrapping lazy.nvim and installing plugins..."
-  if run_nvim_headless "Lazy! sync"; then
-    ok "Plugins installed"
-  else
-    warn "Plugin install reported errors — open Neovim and run :Lazy to inspect"
-  fi
+  install_plugins_and_tools
 
   echo ""
   ok "Installation complete!"
   echo -e "\n  ${BOLD}Next steps:${RESET}"
-  echo "  1. Open Neovim:       nvim"
-  echo "  2. Install LSP tools: :Mason"
-  echo "  3. Verify setup:      :checkhealth"
+  echo "  1. Open Neovim:  nvim"
+  echo "  2. The leader key is ','. Press it and wait: a menu lists every"
+  echo "     key group. ',fk' searches all keymaps by name."
+  echo "  3. Verify setup: bash setup.sh health   (or :checkhealth in Neovim)"
   echo ""
   echo -e "  ${DIM}Re-run this script anytime:  bash setup.sh <command>${RESET}"
   echo ""
@@ -322,15 +378,10 @@ cmd_update() {
     || die "Pull failed. You may need to resolve conflicts manually."
   ok "Config updated"
 
-  info "Syncing plugins..."
-  if run_nvim_headless "Lazy! sync"; then
-    ok "Plugins synced"
-  else
-    warn "Plugin sync reported errors — open Neovim and run :Lazy to inspect"
-  fi
+  install_plugins_and_tools
 
   info "Updating Mason packages..."
-  if run_nvim_headless "MasonUpdate"; then
+  if run_nvim_headless "MasonToolsUpdateSync"; then
     ok "Mason packages updated"
   else
     warn "Mason update reported errors — open Neovim and run :Mason to inspect"
@@ -572,7 +623,7 @@ usage() {
   echo ""
   echo -e "${BOLD}Commands:${RESET}"
   printf "  ${GREEN}%-10s${RESET} %s\n" "install" "Clone and install the config and all plugins"
-  printf "  ${GREEN}%-10s${RESET} %s\n" "update"  "Pull latest config and sync plugins + Mason packages"
+  printf "  ${GREEN}%-10s${RESET} %s\n" "update"  "Pull latest config, restore pinned plugins, update Mason packages"
   printf "  ${GREEN}%-10s${RESET} %s\n" "remove"  "Remove the config (with optional plugin data wipe)"
   printf "  ${GREEN}%-10s${RESET} %s\n" "status"  "Show install info and check for upstream updates"
   printf "  ${GREEN}%-10s${RESET} %s\n" "health"  "Check tool availability and run :checkhealth"

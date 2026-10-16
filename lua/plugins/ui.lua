@@ -162,7 +162,6 @@ return {
           bottom_search = false,      -- popup search box
           command_palette = true,     -- tall cmdline with autocomplete
           long_message_to_split = true,
-          inc_rename = true,
         },
       })
     end,
@@ -187,7 +186,7 @@ return {
         { "<leader>q", group = "Session" },
         { "<leader>r", group = "Refactor/Replace" },
         { "<leader>s", group = "Swap (treesitter)" },
-        { "<leader>T", group = "Test" },
+        { "<leader>t", group = "Test / terminal" },
         { "<leader>x", group = "Diagnostics" },
       })
     end,
@@ -226,6 +225,6 @@ return {
       { "<leader>xl", "<cmd>Trouble loclist toggle<cr>",                            desc = "Location list" },
       { "<leader>xq", "<cmd>Trouble qflist toggle<cr>",                             desc = "Quickfix list" },
     },
-    opts = { use_diagnostic_signs = true },
+    opts = {},
   },
 }

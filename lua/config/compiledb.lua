@@ -18,31 +18,17 @@ local function notify(msg, level)
 end
 
 local function restart_clangd()
-  -- Which buffers were attached has to be recorded before the clients stop,
-  -- because stopping them is what discards that list.
-  local attached = {}
-  for _, client in ipairs(vim.lsp.get_clients({ name = "clangd" })) do
-    for buf in pairs(client.attached_buffers) do
-      attached[buf] = true
-    end
-    client:stop()
+  -- :lsp restart waits for the old process to exit before starting the new
+  -- one and reattaches every buffer itself — no fixed delay to race against.
+  if #vim.lsp.get_clients({ name = "clangd" }) > 0 then
+    vim.cmd("lsp restart clangd")
+    return
   end
-  -- Nothing was attached (clangd installed after the file was opened, say), so
-  -- reload this buffer instead — that is what starts it for the first time.
-  if not next(attached) then attached[vim.api.nvim_get_current_buf()] = true end
-
-  -- Re-reading a buffer re-runs the FileType logic that starts the server, now
-  -- that a compile database exists. Half a second is enough for the old process
-  -- to exit; :edit while it is still shutting down attaches to nothing.
-  vim.defer_fn(function()
-    for buf in pairs(attached) do
-      -- :edit refuses to discard unsaved changes (E37), and would abort the
-      -- loop over the remaining buffers if it errored.
-      if vim.api.nvim_buf_is_valid(buf) and not vim.bo[buf].modified then
-        vim.api.nvim_buf_call(buf, function() pcall(vim.cmd, "edit") end)
-      end
-    end
-  end, 500)
+  -- Nothing running yet (clangd installed after the file was opened, say):
+  -- re-reading the buffer re-runs the FileType logic that starts it. :edit
+  -- refuses to discard unsaved changes (E37), hence the guard.
+  local buf = vim.api.nvim_get_current_buf()
+  if not vim.bo[buf].modified then pcall(vim.cmd, "edit") end
 end
 
 -- cmake writes compile_commands.json into the build directory, but clangd looks

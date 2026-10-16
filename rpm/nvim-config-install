@@ -33,6 +33,24 @@ for d in lazy mason site; do
   cp -a "$DATA_SRC/$d" "$DATA_DST/$d"
 done
 
+# Relocate absolute paths baked in at build time (rpm/build-rpm.sh records the
+# prefix): Mason's Python entry scripts and bash-debug-adapter's wrapper point
+# into the build machine's synthetic HOME. Text files only (grep -I), and only
+# those that contain the old prefix.
+if [ -f "$DATA_SRC/.bake-prefix" ]; then
+  old="$(head -1 "$DATA_SRC/.bake-prefix")"
+  if [ -n "$old" ] && [ "$old" != "$DATA_DST" ]; then
+    # Literal match: escape sed's regex and replacement metacharacters
+    old_re=$(printf '%s' "$old" | sed 's/[][\\.*^$|]/\\&/g')
+    new_rep=$(printf '%s' "$DATA_DST" | sed 's/[\\&|]/\\&/g')
+    for d in lazy mason site; do
+      # grep exits 1 when a tree has no match; that is not an error here
+      { grep -rlIF --null -- "$old" "$DATA_DST/$d" 2>/dev/null || true; } \
+        | xargs -0 -r sed -i "s|$old_re|$new_rep|g"
+    done
+  fi
+fi
+
 echo "[ ok ] Neovim setup activated for ${USER:-$(id -un)}"
 echo ""
 echo "Next steps:"

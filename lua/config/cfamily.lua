@@ -10,6 +10,12 @@ local M = {}
 -- 'path' keeps working after :cd, which relative entries do not.
 local INCLUDE_DIRS = { "include", "inc", "src", "lib" }
 
+-- 'path' is a comma-separated list in which a space or comma inside a
+-- directory name must be backslash-escaped; vim.opt appends entries verbatim.
+local function path_entry(dir)
+  return (dir:gsub("[ ,\\]", "\\%0"))
+end
+
 function M.setup()
   local root = require("config.project").root()
 
@@ -20,15 +26,15 @@ function M.setup()
   for _, dir in ipairs(INCLUDE_DIRS) do
     local path = root .. "/" .. dir
     if vim.uv.fs_stat(path) then
-      vim.opt_local.path:append(path)
+      vim.opt_local.path:append(path_entry(path))
     end
   end
-  vim.opt_local.path:append(root)
+  vim.opt_local.path:append(path_entry(root))
   vim.opt_local.path:append({ "/usr/local/include", "/usr/include" })
   -- <cuda_runtime.h> and friends, which host .cpp files include as often as
   -- .cu files do
   local cuda = require("config.cuda").home()
-  if cuda then vim.opt_local.path:append(cuda .. "/include") end
+  if cuda then vim.opt_local.path:append(path_entry(cuda .. "/include")) end
 
   -- K is LSP hover (bound in lua/plugins/lsp.lua) and answers "what is this
   -- symbol in this project". <leader>K answers the other question — "what does

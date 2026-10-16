@@ -33,7 +33,15 @@ return {
         group = vim.api.nvim_create_augroup("treesitter_start", { clear = true }),
         callback = function(ev)
           local size = vim.fn.getfsize(vim.api.nvim_buf_get_name(ev.buf))
-          if size > max_filesize then return end
+          if size > max_filesize then
+            -- The global foldexpr is treesitter's too, and it builds its own
+            -- parser whether or not highlighting started — so a huge file
+            -- would still freeze on exactly the parse skipped here.
+            for _, win in ipairs(vim.fn.win_findbuf(ev.buf)) do
+              vim.wo[win][0].foldmethod = "manual"
+            end
+            return
+          end
           if pcall(vim.treesitter.start, ev.buf) and not no_ts_indent[ev.match] then
             vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
           end
@@ -199,19 +207,17 @@ return {
       },
       {
         "<leader>rr",
-        mode = "v",
+        mode = "x",
         function() require("grug-far").with_visual_selection() end,
         desc = "Replace selection in project",
       },
     },
     opts = {
-      -- maplocalleader is ',' — the same key as mapleader — so grug-far's
-      -- '<localleader><letter>' defaults land directly on our leader namespace.
-      -- The ones remapped here are those whose default is a *prefix* of an
-      -- existing mapping (,r ,l ,q ,c ,f ,x) or that would shadow a complete
-      -- one (,t ,w). Left alone, each would make the global key wait out
-      -- 'timeoutlen' inside a grug-far buffer — the same trap the grr defaults
-      -- set in lua/plugins/lsp.lua. Everything not listed keeps its default.
+      -- The main actions live under <leader>r, next to the keys that open
+      -- grug-far, so search-and-replace is one group in which-key. Everything
+      -- not listed keeps grug-far's '<localleader><letter>' default, and
+      -- localleader is '\\' (lua/config/options.lua), so those can no longer
+      -- collide with the ',' leader namespace.
       keymaps = {
         replace = { n = "<leader>ra" }, -- apply all replacements
         syncLocations = { n = "<leader>rs" },

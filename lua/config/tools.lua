@@ -5,8 +5,9 @@
 -- Read by lua/plugins/formatting.lua at runtime and by rpm/build-rpm.sh when
 -- baking the offline payload for air-gapped systems.
 --
--- An entry is either a package name, or `{ name, version = "x.y.z" }` to pin
--- one. Pinning is how a package whose newest prebuilt binary cannot run on
+-- An entry is either a package name, or `{ name, version = "<tag>" }` to pin
+-- one. The version is the GitHub release tag exactly as upstream spells it —
+-- stylua tags are `v2.0.2`, not `2.0.2`, and a bare number 404s on download. Pinning is how a package whose newest prebuilt binary cannot run on
 -- RHEL/Rocky 8 stays usable on both halves of the fleet — see stylua below.
 return {
   -- Formatters
@@ -17,7 +18,7 @@ return {
   -- time you format a Lua file. v2.0.2 is the newest release that still needs
   -- only 2.28. Mason picks the glibc asset over the musl one whenever both
   -- match the platform, so this cannot be solved by target selection.
-  { "stylua", version = "2.0.2" },
+  { "stylua", version = "v2.0.2" },
   "cmakelang", -- provides cmake-format for CMakeLists.txt
   -- Linters. Anything a language server already covers stays out: shellcheck
   -- is spawned by bashls, C/C++ by clangd's clang-tidy, Python by ruff, and

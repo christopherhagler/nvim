@@ -56,13 +56,22 @@ function M.python(root)
     return cache[root] or nil
   end
 
+  -- One directory at a time, every name at each level, so the *nearest* venv
+  -- wins whatever it is called (a project ./venv beats ~/.venv), and stopping
+  -- at the repository root or $HOME so an unrelated env above the project is
+  -- never picked up.
   local found = nil
-  for _, name in ipairs(VENV_DIRS) do
-    local dir = vim.fs.find(name, { upward = true, path = root, type = "directory" })[1]
-    if dir then
-      found = interpreter(dir)
+  local stop = vim.fs.root(root, ".git")
+  local home = vim.uv.os_homedir()
+  local dir = vim.fs.normalize(root)
+  while dir and not found do
+    for _, name in ipairs(VENV_DIRS) do
+      found = interpreter(dir .. "/" .. name)
       if found then break end
     end
+    if dir == stop or dir == home then break end
+    local parent = vim.fs.dirname(dir)
+    dir = parent ~= dir and parent or nil
   end
 
   -- Last resort before the $PATH python: conda's base env, which is where
@@ -75,7 +84,8 @@ function M.python(root)
   return found
 end
 
---- Forget cached lookups, for after creating a venv without restarting Neovim.
+--- Forget cached lookups, for after creating a venv without restarting Neovim
+--- (:VenvRefresh, lua/config/commands.lua).
 function M.refresh()
   cache = {}
 end

@@ -31,10 +31,38 @@ M.MARKERS = {
   ".git",
 }
 
+local function has_cmakelists(dir)
+  return vim.uv.fs_stat(dir .. "/CMakeLists.txt") ~= nil
+end
+
+-- "Nearest marker" is the wrong answer for CMake: every add_subdirectory()
+-- folder has a CMakeLists.txt of its own, so editing src/a.cpp would make src/
+-- the project and <leader>bb would configure a subdirectory as if it were the
+-- whole tree. The real project is the topmost CMakeLists.txt inside the
+-- repository. Outside a repository there is no boundary to stop at, so only an
+-- unbroken chain of CMakeLists.txt directories is climbed.
+local function cmake_top(dir)
+  local top = dir
+  local stop = vim.fs.root(dir, ".git")
+  if stop == dir then return dir end
+  for parent in vim.fs.parents(dir) do
+    if has_cmakelists(parent) then
+      top = parent
+    elseif not stop then
+      break
+    end
+    if parent == stop then break end
+  end
+  return top
+end
+
 --- @param source integer|string|nil buffer number or path (default: current buffer)
 --- @return string absolute path to the project root, or the cwd
 function M.root(source)
-  return vim.fs.root(source or 0, M.MARKERS) or vim.uv.cwd()
+  local root = vim.fs.root(source or 0, M.MARKERS)
+  if not root then return vim.uv.cwd() end
+  if has_cmakelists(root) then return cmake_top(root) end
+  return root
 end
 
 return M

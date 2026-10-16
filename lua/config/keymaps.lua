@@ -11,6 +11,9 @@ map("n", "<C-h>", "<C-w>h", { desc = "Window left" })
 map("n", "<C-j>", "<C-w>j", { desc = "Window down" })
 map("n", "<C-k>", "<C-w>k", { desc = "Window up" })
 map("n", "<C-l>", "<C-w>l", { desc = "Window right" })
+-- <C-l> used to also clear search highlight, update diffs and redraw; the
+-- first is <Esc> below, the other two live on <leader>L
+map("n", "<leader>L", "<cmd>diffupdate | redraw!<cr>", { desc = "Redraw screen / update diff" })
 
 -- Centered search navigation
 map("n", "n", "nzzzv", { desc = "Next search result" })
@@ -20,9 +23,12 @@ map("n", "N", "Nzzzv", { desc = "Prev search result" })
 map("n", "<C-d>", "<C-d>zz", { desc = "Scroll down" })
 map("n", "<C-u>", "<C-u>zz", { desc = "Scroll up" })
 
--- Better indenting in visual mode (stay in visual)
-map("v", "<", "<gv", { desc = "Indent left" })
-map("v", ">", ">gv", { desc = "Indent right" })
+-- Better indenting in visual mode (stay in visual). Visual maps throughout
+-- the config use "x", not "v": "v" also covers Select mode, which is what
+-- snippet placeholders use, so typing <, > or , over one fired a mapping
+-- instead of inserting the character.
+map("x", "<", "<gv", { desc = "Indent left" })
+map("x", ">", ">gv", { desc = "Indent right" })
 
 -- Clear search highlight
 map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
@@ -71,9 +77,16 @@ end, { desc = "Build with a custom command" })
 -- Debugging a binary you forgot to rebuild is the classic way to spend ten
 -- minutes single-stepping through source that no longer matches the machine
 -- code, so the two belong together.
+-- Python, Lua, Bash, MATLAB and plain JS have nothing to build, so for those it
+-- is simply "debug".
 map("n", "<leader>bd", function()
-  require("config.build").build(nil, function() require("dap").continue() end)
-end, { desc = "Build, then debug" })
+  local build = require("config.build")
+  if build.has_build() then
+    build.build(nil, function() require("dap").continue() end)
+  else
+    require("dap").continue()
+  end
+end, { desc = "Build (if needed), then debug" })
 
 -- CMake configuration (lua/config/cmake.lua). Remembered per project, so this
 -- is a rare trip rather than something to set on every session.
@@ -90,6 +103,6 @@ end, { desc = "CMake: status (what <leader>bb would do)" })
 -- Format (global, not LSP-scoped: conform handles filetypes such as yaml and
 -- scss that have no language server attached). In visual mode conform detects
 -- the selection and formats only that range.
-map({ "n", "v" }, "<leader>lf", function()
+map({ "n", "x" }, "<leader>lf", function()
   require("conform").format({ async = true, lsp_format = "fallback" })
 end, { desc = "Format buffer/selection" })

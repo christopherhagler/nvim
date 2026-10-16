@@ -1,10 +1,11 @@
-# Build the offline nvim-config RPM for air-gapped RHEL 8 / Rocky 8 systems.
+# Build the offline nvim-config RPMs for air-gapped RHEL / Rocky systems.
 #
-# The job runs inside a Rocky Linux 8 container on the Ubuntu runner so every
-# compiled artifact (Neovim, treesitter parsers, fzf-native) links against
-# EL8's glibc 2.28 — the same environment rpm/build-rpm.sh targets on a
-# physical build host. (Fedora/newer images would link a newer glibc and the
-# binaries would not run on RHEL 8; CentOS 8 images are EOL.)
+# Two builds, each inside a Rocky Linux container on the Ubuntu runner:
+#   • el8  — links against EL8's glibc 2.28 and uses python3.11, so it installs
+#            on EL8 and EL9 (Fedora/newer images would link a newer glibc and
+#            the binaries would not run on RHEL 8; CentOS 8 images are EOL)
+#   • el10 — EL10 ships no python3.11, which the pip-based Mason tools in the
+#            el8 build are compiled for, so it gets its own build (python3.12)
 #
 # Trigger it manually (Actions tab → "Build offline RPM" → Run workflow) or by
 # pushing a version tag (v*). The RPM lands in the run's artifacts; tag builds
@@ -28,8 +29,16 @@ jobs:
   build-rpm:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dist: el8
+            image: rockylinux:8
+          - dist: el10
+            image: rockylinux/rockylinux:10
     container:
-      image: rockylinux:8
+      image: ${{ matrix.image }}
       # privileged: the build script's offline smoke test creates an empty
       # network namespace with `unshare -rn`, which the default container
       # seccomp profile blocks
@@ -53,7 +62,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: nvim-config-rpm
+          name: nvim-config-rpm-${{ matrix.dist }}
           path: dist/*.rpm
           retention-days: 30
           if-no-files-found: error

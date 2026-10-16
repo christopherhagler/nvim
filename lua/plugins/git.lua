@@ -46,8 +46,8 @@ return {
           -- so there is no separate "undo stage" mapping.
           map("n", "<leader>hs", gs.stage_hunk,  "Stage/unstage hunk")
           map("n", "<leader>hr", gs.reset_hunk,  "Reset hunk")
-          map("v", "<leader>hs", function() gs.stage_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, "Stage/unstage hunk")
-          map("v", "<leader>hr", function() gs.reset_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, "Reset hunk")
+          map("x", "<leader>hs", function() gs.stage_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, "Stage/unstage hunk")
+          map("x", "<leader>hr", function() gs.reset_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, "Reset hunk")
           map("n", "<leader>hS", gs.stage_buffer,    "Stage buffer")
           map("n", "<leader>hR", gs.reset_buffer,    "Reset buffer")
           map("n", "<leader>hp", gs.preview_hunk,    "Preview hunk")
