@@ -34,9 +34,10 @@ ROOT="$WORK/root"                        # future / of the RPM
 STAGE_HOME="$WORK/home"                  # synthetic $HOME for the online bake
 TOOLS="$WORK/tools"                      # build-time-only tools (tree-sitter CLI…)
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; RESET='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BLUE='\033[0;34m'; RESET='\033[0m'
 info() { echo -e "${BLUE}[info]${RESET}  $*"; }
 ok()   { echo -e "${GREEN}[ ok ]${RESET}  $*"; }
+warn() { echo -e "${YELLOW}[warn]${RESET}  $*" >&2; }
 err()  { echo -e "${RED}[err]${RESET}   $*" >&2; }
 die()  { err "$*"; exit 1; }
 
@@ -221,6 +222,26 @@ resolve_mason_packages() {
 #
 # ldd runs the real loader, so a missing library *or* a missing symbol version
 # both show up as "not found" here, on the EL8 host that defines the floor.
+#
+# Some packages also ship plugins that are dlopen'd only in a corner case and
+# are built against a newer glibc than EL8's. Failing on those would mean
+# pinning tools back for code paths nobody takes, so they are tolerated here —
+# by exact path, so anything else in the same package is still checked.
+optional_mason_lib() {
+  case "$1" in
+    # LLVM sanitizer runtimes: linked into programs built with -fsanitize=…
+    # against this toolchain, never loaded by clangd. nsan needs GLIBC_2.29.
+    clangd/*/lib/clang/*/lib/*/libclang_rt.*.so) return 0 ;;
+    # CoreCLR's LTTng tracing provider: dlopen'd only if liblttng-ust exists,
+    # skipped silently otherwise.
+    cpptools/extension/debugAdapters/bin/libcoreclrtraceptprovider.so) return 0 ;;
+    # pydevd's attach-to-PID injector (GLIBC_2.34). Only "attach to process"
+    # uses it; launch configs never do. Attach-by-PID will not work on EL8.
+    debugpy/venv/lib/python*/site-packages/debugpy/_vendored/pydevd/pydevd_attach_to_process/attach_linux_*.so) return 0 ;;
+  esac
+  return 1
+}
+
 verify_mason_binaries() {
   local libc
   libc=$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)
@@ -237,6 +258,10 @@ verify_mason_binaries() {
     out=$(ldd "$f" 2>&1 || true)
     case "$out" in
       *"not found"*)
+        if optional_mason_lib "${f#"$pkgs"/}"; then
+          warn "optional, never loaded by the tool itself: ${f#"$pkgs"/}"
+          continue
+        fi
         err "cannot run on this host: ${f#"$pkgs"/}"
         printf '%s\n' "$out" | grep "not found" | sed 's/^/         /' >&2
         bad=1
