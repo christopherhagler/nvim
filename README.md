@@ -1,1079 +1,162 @@
 # Neovim Configuration
 
-A Lua-first Neovim setup targeting C/C++, CUDA, Python, MATLAB, Bash, and web development. Uses `lazy.nvim` for plugin management, native LSP for language intelligence, `nvim-dap` for debugging, and `neotest` for tests. Building and running are built in — `<leader>bb` compiles the project into the quickfix list, `<leader>br` runs the current file.
+A Lua-based Neovim setup for C/C++, CUDA, Python, MATLAB, shell, and web development. Includes completion, language servers, formatting, project builds, debugging, tests, and Git integration.
 
-## Table of Contents
+## Install
 
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Air-gapped install (RPM)](#air-gapped-install-rpm)
-- [File Structure](#file-structure)
-- [Key Mappings](#key-mappings)
-- [Building and running](#building-and-running)
-- [CMake projects](#cmake-projects)
-- [C/C++ project setup](#cc-project-setup)
-- [CUDA](#cuda)
-- [MATLAB](#matlab)
-- [Python virtualenvs](#python-virtualenvs)
-- [The project root](#the-project-root)
-- [Project-local configuration](#project-local-configuration)
-- [Formatting](#formatting)
-- [Plugins](#plugins)
+Supports macOS and Linux, including RHEL/Rocky. Install these prerequisites first:
 
-## Quick Install
+- Neovim **0.12+**, Git, ripgrep, make, a C compiler, and unzip.
+- **tree-sitter CLI 0.26+** for syntax parsers (package manager or `cargo install tree-sitter-cli`).
+- Node.js and Python 3 for language tools.
+- On Linux: `gdb` for C/C++ debugging; a clipboard tool such as `wl-clipboard` or `xclip` for desktop use. SSH uses OSC 52 for copying.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/christopherhagler/nvim/development/setup.sh | bash
-```
-
-This downloads and runs `setup.sh`, which checks your dependencies, backs up any existing config, clones the repo, and installs all plugins automatically.
-
-## Prerequisites
-
-- **Neovim** >= 0.12.0 — native `vim.lsp` config needs 0.11+, and CodeLens (`vim.lsp.codelens.enable`) needs the 0.12 rewrite
-- **Git**
-- **ripgrep** — live grep in Telescope, and the search engine behind grug-far
-- **make** — required to build the telescope-fzf-native extension
-- **A C compiler** — clang (macOS) or gcc (RHEL/Rocky); used for treesitter parsers and clangd projects
-- **tree-sitter CLI** >= 0.26 — required by nvim-treesitter (main branch) to install parsers; install via package manager or `cargo install tree-sitter-cli`, not npm
-- **unzip** — Mason package extraction (often missing on minimal RHEL/Rocky installs)
-- **Node.js** — for TypeScript/JavaScript LSP, prettier, and the JS debug adapter
-- **Python 3** — for pyright and debugpy
-- **bash >= 4** — for bash script debugging via bashdb (macOS ships 3.2: `brew install bash`)
-- **Linux only:** a clipboard tool (`xclip`, `xsel`, or `wl-clipboard`) for system-clipboard integration, and `gdb` for C/C++ debugging. Over SSH none is needed: yanks reach your local clipboard through the terminal (OSC 52), and `p` pastes Neovim's own last yank instead of waiting on a clipboard read most terminals and tmux never answer
-
-Optional, per workflow:
-
-- **cmake >= 3.14** — for CMake projects; `:CompileCommands` and `<leader>bb` both drive it, and target/preset selection reads its file API (see [CMake projects](#cmake-projects))
-- **bear** — records compile flags from a `make` build so clangd can read them (`:CompileCommands`). Only needed for Makefile projects; CMake exports the same data itself. EPEL ships it on EL8 (`dnf install bear`), Homebrew on macOS.
-- **CUDA toolkit** (Linux) — `.cu` files get clangd, clang-format and treesitter regardless; the toolkit adds single-file builds (`nvcc`), kernel debugging (`cuda-gdb`) and CUDA headers for clangd. Found via `$CUDA_HOME`, `nvcc` on `$PATH`, or `/usr/local/cuda[-*]` (see [CUDA](#cuda))
-- **MATLAB** R2021b+ (or Octave) — matlab_ls needs a MATLAB install for diagnostics and formatting; `<leader>br` runs scripts with `matlab -batch`, or Octave when MATLAB is absent (see [MATLAB](#matlab))
-- **pytest / jest / vitest / gtest** — installed per project, not globally; `<leader>tr` runs whichever the project uses
-
-### Platform notes (macOS / RHEL & Rocky 8 and 9)
-
-- **Neovim on RHEL 8 / Rocky 8**: official release binaries require glibc 2.31+, but EL8 ships 2.28 — build from source or use a compatible build.
-- **C/C++ debugging** picks the right adapter per platform automatically: codelldb (LLDB) on macOS, gdb via cpptools on Linux. The `<F5>` picker lists only debuggers that are installed, so macOS (which has no gdb) never offers a gdb entry that would die on launch.
-- **blink.cmp** downloads a prebuilt Rust fuzzy matcher; if it's incompatible with the system (e.g. old glibc), it falls back to the Lua matcher with a warning — completion keeps working.
-- **Language standard for single-file builds** is probed, not assumed. EL8 ships gcc 8.5, which predates `-std=c++20` entirely; `<leader>bb` asks the compiler what it accepts (newest first, `c++20 → c++17 → c++14`) and caches the answer. macOS clang gets c++20, Rocky 8 gets c++17, neither needs configuring. Single-file **C++** builds additionally need `gcc-c++` installed, which the base `gcc` package does not pull in.
-- **`bear`** changed its CLI between versions 2 and 3 (version 3 requires a `--` separator before the build command, version 2 rejects it). `:CompileCommands` checks the installed version and uses the matching form.
-- **cmake >= 3.14** is required by `<leader>bb` and `:CompileCommands`: 3.13 for the `-S . -B build` form, and 3.14 for the file API that target and preset selection read. RHEL/Rocky 8.2+ ship 3.20 or newer, which also covers `CMakePresets.json` (3.19+); only an unpatched 8.0 install (cmake 3.11) is too old.
-- **`<leader>K`** needs `man-pages` and `man-db`, which minimal RHEL/Rocky installs omit. Without them it reports "no man page" and nothing else changes.
-- **Deliberately excluded** because their upstream binaries need a newer glibc than EL8 provides: `asm_lsp` and `neocmakelsp`. Anything that would work on the Mac but not the RHEL boxes does not go in `lua/config/servers.lua`.
-- **stylua is pinned to v2.0.2** in `lua/config/tools.lua` (Mason versions are the upstream release tag, `v` included — `2.0.2` 404s). Its Linux release is a glibc build, and from 2.3.0 on it is linked against `GLIBC_2.34`; 2.0.2 is the newest release that still runs on EL8's 2.28. Every other bundled binary was checked against the same floor — clangd (2.18), lua-language-server (2.17), codelldb and liblldb (2.18), cpptools (2.16), and the bundled Node 22 (2.28 exactly) all clear it, and ruff, shellcheck, shfmt and stylua's musl variant are static. `rpm/build-rpm.sh` re-checks the whole payload with `ldd` at bake time so a future release that raises its floor fails the build instead of the user.
-- **clangd and gcc-toolset**: clangd's own GCC detection picks the *newest* `/opt/rh/gcc-toolset-*` libstdc++, whatever the project actually builds with. `--query-driver` defaults to the system and gcc-toolset drivers (plus Homebrew gcc on macOS) so clangd asks the compiler in `compile_commands.json` for its real include paths. Override with `vim.g.clangd_query_driver` / `$CLANGD_QUERY_DRIVER`; set it to `""` to disable.
-- **Linux ARM64 (aarch64)** is supported alongside x86_64. Every Mason package has an ARM64 build except **clangd**, so on Linux ARM64 the config skips Mason's and enables the distro's from `$PATH` (`dnf install clang-tools-extra`; `setup.sh` checks for it). CUDA works the same on both — the toolkit lives under `/usr/local/cuda` on SBSA/Grace systems too. MATLAB has no Linux ARM64 release; there, `.m` files get matlab_ls's MATLAB-free features and Octave for running.
-- **EL9** (glibc 2.34, gcc 11, cmake 3.26) clears every floor above; EL8 is the constraint everything is checked against.
-- **EL10** works with `setup.sh` like any other host. For the offline RPM it needs its own build: EL10 ships no python3.11, which the pip-based Mason tools in an EL8-built RPM are compiled for (see [Air-gapped install](#air-gapped-install-rpm)).
-- **macOS** (Apple Silicon and Intel) is fully supported by `setup.sh`: codelldb replaces gdb for C/C++ debugging, and Homebrew's bash is used for bashdb. Debug stepping is on `<leader>d…` as well as the F-keys, which need Fn on a Mac keyboard.
-- `setup.sh` (install/health) checks all of the above per platform. For `cmake` and the `tree-sitter` CLI it checks the **version**, not just presence — both are tools that install cleanly and then fail at a specific feature (cmake 3.11 configures a project fine and then reports no targets), which is a far quieter failure than a missing binary.
-
-Everything else added for building, testing and editing is either pure Lua/Vimscript
-(no binaries at all) or runs on the two runtimes the RPM already bundles — Node
-22.17 for the npm-based tools (eslint, emmet, markdownlint, prettier) and
-the build host's Python (python3.11 on EL8/9, python3.12 on EL10) for the pip-based ones (yamllint, cmake-format, debugpy).
-
-## Installation
-
-### One-liner (recommended)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/christopherhagler/nvim/development/setup.sh | bash
-```
-
-### setup.sh commands
-
-After installing, save `setup.sh` locally to use the full CLI:
+Then run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/christopherhagler/nvim/development/setup.sh -o setup.sh
-chmod +x setup.sh
-```
-
-| Command | Description |
-| :--- | :--- |
-| `./setup.sh install` | Clone the config, install plugins at their pinned versions, then parsers and every Mason tool |
-| `./setup.sh update` | Pull latest config, restore plugins to `lazy-lock.json`, update Mason packages |
-| `./setup.sh remove` | Remove the config (with optional plugin data wipe) |
-| `./setup.sh status` | Show install info and check for upstream updates |
-| `./setup.sh health` | Check tool availability (and version, where it matters) and run `:checkhealth` |
-| `./setup.sh backup` | Snapshot current config to a timestamped backup |
-| `./setup.sh restore` | Restore a previous backup |
-
-### Manual install
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/christopherhagler/nvim.git ~/.config/nvim
-   ```
-
-2. Open Neovim — `lazy.nvim` bootstraps and installs all plugins on first launch,
-   then treesitter parsers and every Mason tool (LSP servers, formatters,
-   linters, debug adapters) install in the background. `setup.sh install` does
-   all of this up front instead, so the first launch is quiet.
-
-## Air-gapped install (RPM)
-
-For systems with **no internet access** (air-gapped RHEL / Rocky 8, 9 or 10),
-`setup.sh` can't be used — it downloads plugins and Mason packages. Instead,
-build a self-contained RPM that bundles **everything**: Neovim (compiled
-against the build host's glibc), Node.js, ripgrep, this config, all plugins,
-compiled treesitter parsers, and every Mason tool (LSP servers, formatters,
-linters, debug adapters).
-
-Which RPM a target needs:
-
-| Target | RPM | Python it requires |
-| :--- | :--- | :--- |
-| EL8, EL9 | `…el8.x86_64.rpm` (built on EL8) | `/usr/bin/python3.11` |
-| EL10 | `…el10.x86_64.rpm` (built on EL10) | `/usr/bin/python3.12` |
-
-An RPM runs on the EL major it was built on and later ones, as long as its
-Python exists there: the pip-based Mason tools (black, isort, debugpy,
-yamllint, cmake-format) are compiled for one interpreter version, and EL10 has
-no python3.11.
-
-### Build via GitHub Actions (easiest)
-
-The **Build offline RPM** workflow builds both RPMs, in Rocky Linux 8 and
-Rocky Linux 10 containers, on GitHub's runners:
-
-- Manual: Actions tab → *Build offline RPM* → *Run workflow* → download the
-  `nvim-config-rpm-el8` / `nvim-config-rpm-el10` artifacts when the run
-  finishes (~30–60 min).
-- Release: push a version tag (`git tag v1.0.0 && git push --tags`) — the RPM
-  is built and attached to the GitHub Release automatically.
-
-### Build manually (on an internet-connected RHEL / Rocky 8 or 10 x86_64 host)
-
-```bash
-git clone https://github.com/christopherhagler/nvim.git && cd nvim
-bash rpm/build-rpm.sh
-# → dist/nvim-config-<version>-1.el8.x86_64.rpm  (~1 GB; .el10 on an EL10 host)
-```
-
-The script installs its own build dependencies via dnf, builds Neovim from
-source, bakes all plugins/parsers/tools into the payload using a synthetic
-`$HOME`, and — before packaging — proves the result works with **zero
-network** by re-running it inside an empty network namespace (`unshare -rn`):
-clean boot, LSP attach on C/Python/bash buffers, treesitter, DAP configs, and
-that the script-based tools (clang-format, black, isort, stylua, yamllint,
-cmake-format) actually run.
-
-Component versions (Neovim tag, Node.js, ripgrep, tree-sitter CLI, python for
-debugpy) are pinned at the top of `rpm/build-rpm.sh` and overridable via env.
-
-The build script keeps no package lists of its own. It reads
-`lua/config/servers.lua`, `lua/config/tools.lua`, and `lua/config/parsers.lua`
-out of the staged config at build time — translating LSP server names to Mason
-package names with mason-lspconfig's own mapping — so adding a server or tool to
-the editor config is all that is needed to get it into the RPM.
-
-### Install (on the air-gapped target)
-
-```bash
-sudo dnf install ./nvim-config-<version>-1.el8.x86_64.rpm   # or .el10 on EL10
-nvim-config-install   # once per user: copies config + plugins into $HOME
-exec bash -l          # pick up PATH (nvim, node, rg) from /etc/profile.d
+bash setup.sh install
 nvim
 ```
 
-The RPM installs the payload read-only under `/opt/nvim-config` and declares
-only two dependencies: `git` and the Python the pip-based tools were built for
-(see the table above). `nvim-config-install` backs up any existing
-`~/.config/nvim` before activating, and is safe to re-run to reset to the
-packaged state. It also rewrites the absolute paths Mason bakes into its
-Python entry scripts and bash-debug-adapter's wrapper — they point at the build
-machine's staging directory until then. `/etc/profile.d/nvim-config.sh` also
-sets `NVIM_OFFLINE=1`, which tells the config to skip all startup install
-checks.
+The installer checks dependencies, backs up an existing config, and installs plugins, parsers, and language tools. Keep `setup.sh` for `update`, `health`, `backup`, and `restore` commands.
 
-To update: build a new RPM with a newer config, `sudo dnf upgrade` it on the
-target, and each user re-runs `nvim-config-install`.
+For a manual install, back up any existing `~/.config/nvim`, clone this repository there, and open Neovim. Tools install in the background on first launch.
 
-## File Structure
+Additional tools depend on your projects: CMake **3.14+**, `bear` for Makefile compile databases, a C++ compiler for C++, CUDA toolkit for CUDA builds/debugging, MATLAB R2021b+ for full MATLAB support, and Bash **4+** for shell debugging. Install test frameworks in each project.
 
-```text
-init.lua                    # Entry point — lazy.nvim bootstrap
-lua/
-  config/
-    options.lua             # Core Neovim options
-    keymaps.lua             # Global key mappings
-    autocmds.lua            # Autocommands (whitespace trim, yank highlight, etc.)
-    commands.lua            # User commands (:Build, :Run, :CMake*, :CompileCommands, :FormatOnSave, :TrimToggle, :VenvRefresh)
-    project.lua             # Project root detection — one marker list, shared by everything below
-    build.lua               # Build/run detection, async compile into the quickfix list
-    cmake.lua               # CMake build type / target / preset, and target discovery via the file API
-    compiledb.lua           # compile_commands.json generation for clangd
-    venv.lua                # Python virtualenv resolution (pyright + debugpy + :Run)
-    cfamily.lua             # Buffer-local C/C++/CUDA setup (include path, man pages)
-    cuda.lua                # CUDA toolkit discovery + clangd's CUDA flags
-    matlab.lua              # MATLAB install discovery (matlab_ls, <leader>br)
-    matlab_session.lua      # Run code, project path, figures, output in matlab_ls's MATLAB
-    matlab_dap.lua          # nvim-dap adapter bridged onto matlab_ls's built-in debugger
-    indent.lua              # Per-filetype indent widths (applied by after/ftplugin)
-    servers.lua             # LSP servers to install/enable — single source of truth
-    tools.lua               # Mason formatters/linters/debug adapters — single source of truth
-    parsers.lua             # Treesitter parsers — single source of truth
-  plugins/
-    ui.lua                  # tokyonight, lualine, which-key, noice, trouble, indent guides
-    editor.lua              # Treesitter + textobjects, matchup, autopairs, surround, grug-far, neogen, undotree
-    explorer.lua            # nvim-tree (file explorer), aerial (symbols outline)
-    telescope.lua           # Fuzzy finder
-    lsp.lua                 # Mason, mason-lspconfig, native vim.lsp config, blink.cmp, snippets
-    formatting.lua          # conform.nvim (clang-format, prettier, black, stylua, shfmt, cmake-format)
-    linting.lua             # nvim-lint (markdownlint, yamllint); every other language is covered by its LSP
-    dap.lua                 # nvim-dap + UI, codelldb + cpptools/gdb (C/C++), debugpy (Python), js-debug, bashdb
-    testing.lua             # neotest + pytest / jest / vitest / gtest adapters
-    git.lua                 # vim-fugitive, gitsigns
-    terminal.lua            # toggleterm
-    ai.lua                  # claudecode.nvim (Claude Code editor integration)
-after/ftplugin/             # Per-filetype settings; applies lua/config/indent.lua
-                            # (c.lua, cpp.lua and cuda.lua additionally pull in config/cfamily.lua)
-.stylua.toml                # Lua formatting (stylua defaults to tabs; this repo uses 2 spaces)
-rpm/                        # Offline RPM build for air-gapped EL8 systems
-  build-rpm.sh              # One-command builder (run on a connected EL8 or EL10 host)
-  nvim-config.spec          # RPM spec
-  nvim-config-install       # Per-user activation script (ships in the RPM)
-```
+On RHEL/Rocky 8, use a Neovim build compatible with glibc 2.28. On Linux ARM64, install `clangd` through the system package manager (`clang-tools-extra` on RHEL/Rocky).
 
-## Key Mappings
+## Essential shortcuts
 
-Leader key: `,`
-
-### General
+The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leader to see available mappings, or use `<leader>fk` to search all keymaps.
 
 | Key | Action |
 | :--- | :--- |
-| `<leader>w` | Save buffer |
-| `jk` | Exit insert mode |
-| `<C-d>` / `<C-u>` | Scroll down / up (centered) |
-| `n` / `N` | Next / prev search result (centered) |
-| `<Esc>` | Clear search highlight |
-| `<C-\>` / `<leader>tt` | Toggle horizontal terminal (`<C-\>` also works from inside it) |
-| `<Esc><Esc>` | Leave terminal mode (any terminal; a single `<Esc>` still reaches the program) |
-| `<leader>L` | Redraw the screen and update diffs |
-| `<leader>u` | Toggle undo tree |
+| `<C-p>` / `<leader>ff` | Find project files |
+| `<leader>fg` / `<leader>fw` | Search project text / word or selection |
+| `<leader>fb` | Switch buffers |
+| `<leader>n` / `<leader>N` | Toggle explorer / reveal current file |
+| `<leader>fs` / `<leader>fS` | Find symbols in the file / workspace |
+| `gd` / `gr` / `K` | Definition / references / documentation |
+| `<leader>rn` / `<leader>a` | Rename symbol / code actions |
+| `<leader>lf` | Format buffer or selection |
+| `[d` / `]d` / `<leader>e` | Previous / next diagnostic / show message |
+| `<leader>xx` | Open project diagnostics |
+| `[q` / `]q` / `<leader>xc` | Previous / next quickfix item / toggle list |
+| `<leader>gs` / `<leader>gd` | Git status / diff |
+| `]c` / `[c` / `<leader>hp` | Next / previous Git hunk / preview hunk |
+| `<leader>hs` | Stage or unstage hunk |
+| `<C-\>` / `<leader>tt` | Toggle terminal |
+| `<Esc><Esc>` | Leave terminal mode |
+| `<C-h/j/k/l>` | Move between windows |
+| `<leader>w` / `jk` | Save / leave insert mode |
 
-### Completion (blink.cmp)
+Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `<CR>` accepts a selected item. Nothing is preselected. `<Esc>` dismisses the menu; `jk` leaves insert mode.
 
-| Key | Action |
-| :--- | :--- |
-| `<Tab>` / `<S-Tab>` | Select next / previous item, or jump between snippet fields |
-| `<CR>` | Accept the selected item |
-| `<Esc>` | Dismiss the menu (stays in insert mode) |
-| `jk` | Leave insert mode, menu open or not |
-| `<C-space>` | Show / toggle documentation |
-| `<C-b>` / `<C-f>` | Scroll the documentation window |
-
-Nothing is preselected, so `<CR>` only ever accepts something you chose with
-`<Tab>` — a bare `<CR>` inserts a newline. `<Esc>` only swallows the keypress
-while the menu is actually open; with it closed it leaves insert mode as usual.
-`jk` is mapped `noremap` to a literal `<Esc>`, so it bypasses the completion
-mapping entirely and does both in one press.
-
-### Navigation
+## Build and run
 
 | Key | Action |
 | :--- | :--- |
-| `<C-h/j/k/l>` | Move between windows (from terminal mode too) |
-| `[b` / `]b` | Previous / next buffer |
-| `[q` / `]q` | Previous / next quickfix item (wraps) |
-| `[l` / `]l` | Previous / next location list item (wraps) |
-| `<leader>xc` | Toggle the quickfix window |
-| `<leader>n` | Toggle file explorer (nvim-tree) |
-| `<leader>N` | Reveal current file in explorer |
-| `<leader>o` / `<F8>` | Toggle symbols outline (aerial) |
+| `<leader>bb` | Build project |
+| `<leader>br` | Run current file |
+| `<leader>bd` | Build, then debug on success |
+| `<leader>bc` | Enter a custom build command |
+| `<leader>bk` | Stop build |
 
-The quickfix list is where compiler errors, test failures, grep results and LSP
-references all land, so `]q` / `[q` are the motions that tie building, testing
-and searching together. Both wrap rather than raising `E553` at the end.
+Builds detect CMake, Make, Cargo, or an npm build script from the current file's project. Standalone C/C++ files compile with debug symbols. Builds run asynchronously and send errors to quickfix; use `[q` / `]q` to navigate them. Runs use a terminal split.
 
-### Text objects and movement (treesitter)
+Command equivalents: `:Build [command]`, `:Run`, and `:BuildStop`. Set persistent build/run commands in [project configuration](#project-configuration).
 
-Defined against the parse tree, so they work the same in C, C++, Python, Lua,
-JS/TS and every other configured language.
+For CMake, Debug is the default. Choose a build type with `<leader>bt`, target with `<leader>bT`, or configure preset with `<leader>bp`. Presets control their own configuration. Choices persist per project; `<leader>bi` shows the active settings.
 
-| Key | Object |
-| :--- | :--- |
-| `af` / `if` | A function (with signature) / its body |
-| `ac` / `ic` | A class / its body |
-| `aa` / `ia` | An argument or parameter |
-| `ai` / `ii` | An if/else statement / its body |
-| `al` / `il` | A loop / its body |
-| `am` / `im` | A function call / its arguments |
+### C/C++ and CUDA
 
-Combine with any operator: `daf` deletes a function, `cia` changes an argument,
-`vac` selects a class, `yif` yanks a function body.
+Run `:CompileCommands` (or `<leader>lg`) to configure clangd's include paths and compiler flags:
+
+- **CMake:** configure the project and link its `compile_commands.json` to the project root.
+- **Make:** run a full rebuild through `bear` to record compiler commands.
+- **Other projects:** generate a fallback `.clangd` file.
+
+Use `<leader>lh` to switch between source and header. Project `.clang-format` files override the default C/C++ style (K&R braces, four spaces, 120 columns).
+
+CUDA editing uses clangd and clang-format. Building requires `nvcc`; kernel debugging requires `cuda-gdb` on Linux. The toolkit is detected from `$CUDA_HOME`, `nvcc` on `$PATH`, or `/usr/local/cuda*`.
+
+## Debug and test
+
+Start debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/C++ offers an executable picker. Project `.vscode/launch.json` configurations are loaded automatically.
 
 | Key | Action |
 | :--- | :--- |
-| `]f` / `[f` | Next / previous function |
-| `]F` / `[F` | Next / previous function end |
-| `]]` / `[[` | Next / previous class |
-| `<leader>sa` / `<leader>sA` | Swap parameter with the next / previous one |
-| `<leader>sf` / `<leader>sF` | Swap function with the next / previous one |
-| `%` | Jump between matching pairs, including `#if` / `#else` / `#endif`, `if`/`end`, `do`/`done`, and HTML tags (vim-matchup) |
+| `<F9>` / `<leader>db` | Toggle breakpoint |
+| `<F10>` / `<leader>dn` | Step over |
+| `<F11>` / `<leader>di` | Step into |
+| `<S-F11>` / `<leader>do` | Step out |
+| `<S-F5>` / `<leader>dt` | Terminate |
+| `<leader>dB` | Conditional breakpoint |
+| `<leader>dv` / `<leader>du` | Evaluate expression / toggle debug UI |
+| `<leader>tr` / `<leader>tf` / `<leader>ta` | Run nearest test / file / project |
+| `<leader>td` / `<leader>tl` | Debug nearest test / rerun last test |
+| `<leader>ts` / `<leader>to` | Test summary / test output |
 
-`]c` / `[c` are deliberately left to gitsigns for hunk navigation.
+Debugging supports C/C++, CUDA, Python, MATLAB, JS/TS, and Bash. C/C++ uses LLDB on macOS and gdb on Linux. Leader mappings also work when your terminal captures function keys.
 
-### Telescope
+Tests use pytest, Jest, Vitest, or Google Test. For Google Test, open the summary (`<leader>ts`), mark test files/directories with `m`, then run `:ConfigureGtest` **inside that window** and select the compiled test binary. The choice persists per project.
 
-| Key | Action |
-| :--- | :--- |
-| `<C-p>` / `<leader>ff` | Find files |
-| `<leader>fg` | Live grep |
-| `<leader>fb` | Buffers |
-| `<leader>fh` | Help tags |
-| `<leader>fr` | Recent files |
-| `<leader>fd` | Diagnostics |
-| `<leader>fs` | Document symbols (current file) |
-| `<leader>fS` | Workspace symbols (whole project, via the LSP index) |
-| `<leader>fw` | Grep the word under the cursor (or the visual selection) |
-| `<leader>f/` | Fuzzy find inside the current buffer |
-| `<leader>fc` | Changed files (git status) |
-| `<leader>fp` | Resume the last picker, query intact |
-| `<leader>fk` | Search keymaps |
+### Python
 
-`<leader>fS` asks the language server, not the filesystem — on a C or C++ tree
-it is the fastest way to reach a function whose file you don't know.
-
-Telescope is read-only — it finds matches but cannot change them. Project-wide
-edits go through grug-far below.
-
-Inside a picker, `<C-j>` / `<C-k>` move the selection, `<C-q>` sends the
-selected results to the quickfix list, and `<Esc>` closes it.
-
-Telescope is pinned to its 0.2.x releases, the first that work with
-nvim-treesitter's `main` branch and pass a position encoding to the LSP
-requests that Neovim 0.12 requires.
-
-### Search & Replace (grug-far)
-
-Project-wide find and replace, backed by ripgrep. Opens a normal buffer: edit
-the search/replace/files fields at the top, watch the live preview update, then
-apply across every matching file.
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>rr` | Replace in project (also works on a visual selection) |
-| `<leader>rw` | Replace word under cursor |
-| `<leader>rf` | Replace in current file only |
-
-Inside the results buffer:
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>ra` | Apply all replacements to disk |
-| `<leader>rs` | Sync edited results back to their files |
-| `<leader>rl` | Sync just the current line |
-| `<leader>rq` | Send results to quickfix |
-| `<leader>ru` | Refresh results |
-| `<leader>rh` | Search history |
-| `<leader>rx` | Toggle the replacement between literal text and Lua interpreter |
-| `<leader>rm` | Show the underlying ripgrep command |
-| `<leader>rc` | Close |
-| `<enter>` | Jump to the match under the cursor |
-| `g?` | Full keymap help |
-
-The main actions are kept under `<leader>r`, next to the keys that open
-grug-far. Everything else keeps its upstream `<localleader><letter>` default
-(see `g?`); `maplocalleader` is `\`, so those can never collide with the `,`
-leader namespace.
-
-### Build & Run
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>bb` | Build the project (async, errors to quickfix) |
-| `<leader>br` | Run the current file in a terminal split |
-| `<leader>bd` | Build, then start debugging on success (just debug, for languages with nothing to build) |
-| `<leader>bc` | Build with a custom command (prefilled with the detected one) |
-| `<leader>bk` | Stop the running build |
-| `<leader>bt` | CMake: choose the build type (Debug / RelWithDebInfo / Release / MinSizeRel) |
-| `<leader>bT` | CMake: choose which target to build |
-| `<leader>bp` | CMake: choose a configure preset from `CMakePresets.json` |
-| `<leader>bi` | CMake: show the active build type, target and build directory |
-
-See [Building and running](#building-and-running) for what gets detected, and
-[CMake projects](#cmake-projects) for the build type / target / preset model.
+Language tools, runs, debugging, and pytest share the detected project interpreter. Activate a virtualenv/Conda environment or create `.venv`, `venv`, `.env`, or `env` in the project. Run `:VenvRefresh` after creating or changing an environment during a session.
 
 ### MATLAB
 
-Buffer-local to `.m` files. Everything runs in the background MATLAB that
-matlab_ls keeps alive (see [MATLAB](#matlab)); output appears in a
-`matlab://output` split, or in dap-ui's REPL while debugging.
+With MATLAB installed, code runs in the persistent session managed by the language server:
 
-| Key | Action |
-| :--- | :--- |
-| `<leader>br` / `<leader>mr` | Run the current file (`run('…')`, with the project path set up) |
-| `<leader>ms` | Run the current `%%` section (visual: run the selected lines) |
-| `<leader>ml` | Run the current line |
-| `<leader>mc` | Open the persistent `>>` command window |
-| `<leader>mh` | `help` for the word under the cursor |
-| `<leader>mw` | `whos` — list workspace variables |
-| `<leader>mk` | Interrupt (Ctrl-C) |
-| `<leader>mo` | Toggle the output window (`q` closes it) |
-| `<leader>mf` | Export all open figures to PNG and open them (for sessions with no display) |
-| `<leader>mx` | `close all` figures |
-| `<leader>mp` | Re-run the project's path setup |
-| `]]` / `[[` | Next / previous `%%` section |
-| `<F5>` | Debug: "Run current file" or "Run command" (e.g. `myfunc(2, 'x')`) |
+- `<leader>br` runs the file; `<leader>ms` runs a `%%` section or visual selection; `<leader>ml` runs the line.
+- `<leader>mc` opens the command window; `<leader>mk` interrupts; `<leader>mo` toggles output.
+- `<leader>mf` exports figures to PNG; `<F5>` starts debugging.
 
-Commands: `:Matlab <code>` evaluates from any buffer; `:MatlabSetup` re-runs the
-path setup.
+Project paths load from a root `.prj`, `startup.m`, or a custom `matlab_setup` command. Use `:MatlabSetup` to reload them and `:Matlab <code>` to evaluate code. Run MATLAB tests with `runtests` in the command window. Without MATLAB, Octave can run scripts; full language and debugging features require MATLAB.
 
-### LSP
+## Project configuration
 
-| Key | Action |
-| :--- | :--- |
-| `gd` | Go to definition |
-| `gD` | Go to declaration |
-| `gy` | Go to type definition |
-| `gI` | Go to implementation (`gi` keeps Vim's "insert where you stopped") |
-| `gr` | Find references |
-| `K` | Hover documentation |
-| `<leader>rn` / `<leader>lr` | Rename symbol |
-| `<leader>a` / `<leader>la` | Code actions |
-| `<leader>re` | Refactor |
-| `<leader>lc` | CodeLens action (only bound when the server offers CodeLens) |
-| `<leader>lf` | Format buffer (manual; via conform) |
-| `<leader>li` | Toggle inlay hints |
-| `<leader>ld` | Generate a doc comment for the symbol below (neogen) |
-| `<leader>lI` / `<leader>lO` | Incoming / outgoing calls (call hierarchy) |
-| `<leader>lb` / `<leader>lB` | Base / derived types (type hierarchy) |
-| `<leader>lh` | Switch source/header (C/C++, clangd) |
-| `<leader>lg` | Generate `compile_commands.json` (C/C++) |
-| `<leader>K` | Man page for the word under the cursor (C/C++) |
-| `<leader>e` | Show line diagnostics |
-| `<leader>xf` | Send diagnostics to location list |
-| `[d` / `]d` | Prev / next diagnostic (with the message in a float) |
+Builds, searches, and test runs use the current buffer's project root. Roots are detected from build/package files or `.git`; nested CMake projects use the topmost CMake project within the repository.
 
-`gr` finds every textual reference; `<leader>lI` answers the narrower question
-of what actually *calls* this, which is the one that matters when a name like
-`init` has two hundred references. `<leader>lb`/`<leader>lB` answer the third
-version of the question — what this type derives from, and what derives from it
-— which in C++ is usually the one you actually want. `<leader>ld` writes the
-comment skeleton in each language's own convention — doxygen for C/C++,
-google-style docstrings for Python, JSDoc for JS/TS, LDoc for Lua.
-
-`<leader>a` and `<leader>re` work in visual mode as well as normal. That is not
-cosmetic: a code action over a *range* is how clangd offers "extract function"
-and "extract variable", and neither is reachable from a normal-mode cursor.
-
-Inlay hints and CodeLens are the only two LSP features here that send a request
-you did not ask for, so they are the only two that can fail unprompted. Both are
-switched on only for buffers with a real `file://` name. A `:Gdiffsplit` buffer
-is still filetype `cpp`, so clangd attaches to it, and the first inlay-hint
-request against `fugitive://…` came back as a `-32602` error banner you did
-nothing to cause. Hover and go-to-definition stay bound in those buffers — they
-only complain if you press them.
-
-Neovim ships its own `gr`-prefixed LSP mappings (`grr`, `grn`, `gra`, `gri`,
-`grt`, and `grx` as of 0.12). Every one of them is rebound above, so the config
-deletes them — otherwise `gr` would be a prefix of a live mapping and each press
-would stall for `timeoutlen` (500 ms) waiting for a second key. `grx` is worth
-calling out: it arrived with the 0.12 CodeLens rewrite, so upgrading Neovim
-silently reintroduced that stall until it was added to the deletion list.
-
-`<leader>lf` is a global mapping rather than an LSP one, so filetypes with a
-formatter but no language server (yaml, scss, markdown) can still be formatted.
-In visual mode it formats just the selection.
-
-### Debugger (nvim-dap)
-
-VSCode-style function keys for stepping, plus leader mappings for the rest.
-The same keys drive every configured language: C/C++ (codelldb / gdb), CUDA
-(cuda-gdb), Python (debugpy), MATLAB (MathWorks' adapter), JS/TS and React
-(js-debug, node or Chrome), and Bash (bashdb).
-`<F5>` lists every configuration that applies to the current filetype.
-
-| Key | Action |
-| :--- | :--- |
-| `<F5>` | Continue / start |
-| `<S-F5>` | Terminate |
-| `<F9>` | Toggle breakpoint |
-| `<F10>` | Step over |
-| `<F11>` | Step into |
-| `<S-F11>` | Step out |
-| `<leader>dc` | Continue / start |
-| `<leader>dn` | Step over (next) |
-| `<leader>di` | Step into |
-| `<leader>do` | Step out |
-| `<leader>dp` | Pause |
-| `<leader>db` | Toggle breakpoint |
-| `<leader>dB` | Conditional breakpoint |
-| `<leader>dC` | Run to cursor |
-| `<leader>de` | Exception breakpoints (per-adapter list) |
-| `<leader>dv` | Evaluate expression under cursor / selection |
-| `<leader>du` | Toggle DAP UI |
-| `<leader>dr` | Debug REPL |
-| `<leader>dl` | Run last |
-| `<leader>dt` | Terminate session |
-| `<leader>dx` | Clear all breakpoints |
-
-The F-keys are the VS Code layout; everything they do is also on
-`<leader>d…`, because terminals often keep them for themselves — GNOME
-Terminal takes F10 and F11, Konsole and Windows Terminal take F11, tmux can
-mangle shifted F-keys, and a Mac needs Fn.
-
-`<Esc>` in any debug prompt (executable, arguments, gdbserver address, dev
-server URL) cancels the launch. Arguments are split the way a shell would, so
-`"two words"` stays one argument. Debuggees start in the project root, not
-Neovim's cwd.
-
-**Picking what to debug.** The C/C++ launch configurations never ask you to type
-a path.
-
-In a configured **CMake** project the list comes from CMake itself — the file
-API reports which targets are executables and where each one's binary lands —
-with the currently selected build target (`<leader>bT`) first. That beats
-guessing: a filesystem sweep cannot tell a test fixture from the program, and it
-happily offers stale binaries from a build directory that was renamed rather
-than deleted.
-
-Anything CMake does not account for — a hand-built binary, a Makefile or Cargo
-project — still comes from the original scan of `build/`, `bin/`, `out/`,
-`cmake-build-*/` and `target/debug/`, offered **newest first** since the binary
-you just rebuilt is nearly always the one you want. Either way the last choice
-for a project is remembered and floated to the top, and "Enter a path manually…"
-is always the final entry. Each language also has a "with arguments" variant
-that prompts for argv, so the common case stays a single keypress.
-
-`<leader>bd` builds first and then starts the debugger, which is the pairing that
-avoids stepping through source that no longer matches the binary. For Python,
-Lua, Bash, MATLAB and JS without a `build` script there is nothing to build, so
-it just starts the debugger.
-
-**Language notes.**
-
-- **C/C++** — codelldb (LLDB) is listed first on macOS, gdb via cpptools first on Linux; each is offered wherever it is installed (gdb counts as installed when it is on `$PATH` or set with `g:gdb_path` / `$GDB`). Launches use an integrated terminal, so a program that reads stdin works.
-- **Python** — debugpy runs from Mason's own venv, but the *debugged program* runs under the project's virtualenv (see [Python virtualenvs](#python-virtualenvs)). Without that split, every third-party import fails under the debugger only.
-- **JS/TS** — node launch/attach, plus "Launch Chrome against dev server" for browser debugging. `.jsx` and `.tsx` are wired up too, which plain `javascript`/`typescript` configs miss.
-- **CUDA** — "Launch (cuda-gdb)" is listed first in `.cu` buffers and last in C/C++ ones, whenever the toolkit has cuda-gdb (Linux only). It is cpptools driving cuda-gdb, so kernel breakpoints and host code both work.
-- **MATLAB** — debugs in the background MATLAB, so the project path applies. Breakpoints (including conditional), stepping, call stack, locals, watches and hover evaluation work; the program's output goes to the dap-ui REPL. "Run command" is for functions that need arguments. Breakpoints are cleared from MATLAB when the session ends, so a later plain run never stops at one.
-- **Bash** — needs bash >= 4 (macOS ships 3.2; Homebrew's is used when present).
-
-### Testing (neotest)
-
-Runs whichever framework the project uses: pytest, jest, vitest, or gtest.
-Failures show up as signs in the gutter and land in the quickfix list, so `]q`
-walks them the same way it walks compiler errors.
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>tr` | Run the nearest test |
-| `<leader>tf` | Run the current file |
-| `<leader>ta` | Run every test in the project |
-| `<leader>tl` | Run the last test again |
-| `<leader>td` | Debug the nearest test (breakpoints, DAP UI) |
-| `<leader>tk` | Stop the running test |
-| `<leader>ts` | Toggle the summary tree |
-| `<leader>to` | Show output for the test under the cursor |
-| `<leader>tp` | Toggle the output panel |
-| `<leader>tw` | Watch the current file and re-run on change |
-| `]t` / `[t` | Next / previous failed test |
-
-The terminal toggle shares the group as `<leader>tt` (and `<C-\>`).
-
-C++ is the one language that cannot be auto-discovered: gtest tests are compiled
-into a binary whose path only the build system knows, so it has to be recorded
-once per project. `:ConfigureGtest` is a **buffer-local** command that only
-exists inside the neotest summary window, not a global one:
-
-1. `<leader>ts` to open the summary tree.
-2. Mark the test files or directories with `m`.
-3. `:ConfigureGtest` in that window, and give it the path to the compiled test
-   binary (`build/my_tests`).
-
-The answer is stored per project, so this survives restarts.
-
-### Claude (claudecode.nvim)
-
-Connects the local `claude` CLI to Neovim with the same protocol as the official
-VS Code extension: selection/file context, diagnostics, and native diff review.
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>cc` | Toggle Claude terminal |
-| `<leader>cf` | Focus Claude |
-| `<leader>cm` | Select model |
-| `<leader>cb` | Add current file to context |
-| `<leader>cs` | Send selection to Claude (visual) |
-| `<leader>cy` / `<leader>cn` | Accept / reject proposed diff |
-
-### Diagnostics (Trouble)
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>xx` | Project-wide diagnostics panel |
-| `<leader>xb` | Current buffer diagnostics |
-| `<leader>xs` | Symbols panel |
-| `<leader>xq` | Quickfix list |
-| `<leader>xl` | Location list |
-
-### Session
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>qs` | Restore session for current directory |
-| `<leader>ql` | Restore last session |
-| `<leader>qd` | Don't save session on exit |
-
-### Git
-
-| Key | Action |
-| :--- | :--- |
-| `<leader>gs` | Git status |
-| `<leader>gc` | Git commit |
-| `<leader>gp` | Git push |
-| `<leader>gl` | Git log |
-| `<leader>gd` | Git diff |
-| `<leader>gb` | Git blame |
-| `]c` / `[c` | Next / prev hunk |
-| `<leader>hs` / `<leader>hr` | Stage/unstage hunk (toggle) / reset hunk |
-| `<leader>hS` / `<leader>hR` | Stage / reset whole buffer |
-| `<leader>hp` | Preview hunk |
-| `<leader>hb` | Blame line |
-| `<leader>hd` | Diff this file against the index |
-
-## Building and running
-
-`<leader>bb` builds, `<leader>br` runs. Neither needs a plugin or any per-project
-setup, and both are implemented in `lua/config/build.lua`.
-
-**Build** detects the project's build system by walking up from the current file:
-
-| Marker | Command |
-| :--- | :--- |
-| `CMakeLists.txt` | `cmake` configure + build for the active profile — see [CMake projects](#cmake-projects) |
-| `Makefile` | `make` |
-| `Cargo.toml` | `cargo build` |
-| `package.json` | `npm run build` |
-| none, in a `.c`/`.cpp` file | `cc`/`c++` with `-Wall -Wextra -g` into the cache directory |
-
-The build runs **asynchronously** — `:make` would freeze the editor for the
-length of the compile — and its output is parsed with `errorformat` into the
-quickfix list, so `]q` and `[q` walk the errors. On failure the quickfix window
-opens without stealing the cursor; on success it closes and reports any
-warnings. `<leader>bk` stops a build in progress.
-
-The CMake line configures every time, which is a no-op once the cache exists.
-That is deliberate: a fresh clone builds on the first `<leader>bb`, and
-`compile_commands.json` stays in step with the build for clangd.
-
-## CMake projects
-
-CMake gets more than a fixed command line, because a fixed command line gets one
-important thing wrong. `cmake -S . -B build && cmake --build build` configures
-with **no** `CMAKE_BUILD_TYPE`, and on a single-config generator that leaves the
-per-configuration flags empty — so the compiler runs without `-g` and the binary
-carries no debug information at all. Breakpoints then never bind, which looks
-like a broken debugger rather than a wrong build. Every IDE defaults to a Debug
-configuration for this reason, and so does this config.
-
-| Key | Command | What it sets |
-| :--- | :--- | :--- |
-| `<leader>bt` | `:CMakeBuildType [type]` | Debug (default), RelWithDebInfo, Release, MinSizeRel |
-| `<leader>bT` | `:CMakeTarget [name]` | Build one target instead of everything (`all` clears it) |
-| `<leader>bp` | `:CMakePreset` | A configure preset from `CMakePresets.json` |
-| `<leader>bi` | `:CMakeStatus` | Shows the active profile and build directory |
-
-Each choice is remembered **per project root** and persists across restarts
-(`stdpath('state')/cmake-profiles.json`), so it is a rare trip rather than
-something to set every session.
-
-**Presets win when present.** `CMakePresets.json` is how a modern C++ project
-shares one configuration between CI, the command line and every editor, so
-selecting a preset hands it the build directory, the generator and the cache
-variables; the build type above then no longer applies. Preset names come from
-`cmake --list-presets`, so `hidden` presets and unmet `condition` blocks are
-filtered out by CMake itself rather than by a second-guessing parser here.
-
-**Targets come from the CMake file API**, not from parsing `--target help` —
-that target does not exist under Ninja, and it cannot report where a target's
-output lands. The file API does, which is what makes the debugger useful:
-`<F5>` offers the executables CMake says the project produces, with the selected
-target first, instead of sweeping the filesystem for anything executable. The
-old scan is still there as the fallback for non-CMake projects and hand-built
-binaries.
-
-`<leader>bd` builds and then starts the debugger on success — the single
-keypress an IDE's Debug button is (for a file with nothing to build, it just
-debugs). Debugging a binary you forgot to rebuild is
-the classic way to lose ten minutes single-stepping through source that no
-longer matches the machine code.
-
-Multi-config generators (Ninja Multi-Config, Visual Studio) are handled too:
-they choose the configuration at build time, so the config passes `--config`
-instead of `CMAKE_BUILD_TYPE`, detected from `CMAKE_CONFIGURATION_TYPES` in the
-cache.
-
-**Run** executes the current file: `python3` (from the project venv), `node` or
-`tsx`, `bash`, `nvim -l` for Lua, and for C/C++ a compile chained to the
-resulting binary with `&&`. Output goes to a terminal split that is reused
-across runs, with focus inside it so a program reading stdin is immediately
-usable. `<Esc><Esc>` leaves terminal mode; pressing `<leader>br` from that
-terminal then re-runs the last command, rather than complaining that a terminal
-has no filetype.
-
-`<leader>bk` stops the whole build — cmake, make and the compilers, not just
-the shell wrapping them. A project build (cmake, make, a custom command) is
-parsed with the compiler error format whichever buffer it was started from.
-
-**Nested CMake projects** build from the top: the project root is the topmost
-`CMakeLists.txt` inside the repository, not the nearest one, so editing a file
-under an `add_subdirectory()` folder still configures and builds the whole
-tree.
-
-`:Build <cmd>`, `:BuildStop` and `:Run` are the command-line equivalents.
-
-## C/C++ project setup
-
-clangd needs a `compile_commands.json` — the record of how each file is actually
-compiled, with its `-I` paths, `-D` defines and language standard. Without one
-it has to guess, and the guess fails in the most visible way possible: every
-project header reports as "file not found", so completion, go-to-definition and
-diagnostics all quietly degrade at once.
-
-Neither cmake nor make writes that file by default. `:CompileCommands` picks the
-right way to produce it for the current project and restarts clangd:
-
-| Project | What it does |
-| :--- | :--- |
-| CMake | Runs the same configure `<leader>bb` uses (so the two never fight over the cache), then symlinks `compile_commands.json` from the build directory to the project root |
-| Makefile | Runs `bear -- make -B` to observe a full rebuild and record every compile |
-| Anything else | Writes a `.clangd` with fallback include paths and a language standard **probed from the compiler** |
-
-`:CompileCommands!` skips detection and writes the `.clangd` fallback directly.
-`<leader>lg` is the same thing on a key. A symlink is used rather than a copy so
-it stays correct as the build directory is regenerated.
-
-The generated `.clangd` scopes its `-std` by file extension, using `If:
-PathMatch:` fragments. A bare `CompileFlags.Add` reaches every file the server
-opens, C and C++ alike, so a project-wide `-std=c++20` puts `Invalid argument
-'-std=c++20' not allowed with 'C'` on line 1 of every `.c` in the tree. For the
-same reason the built-in fallback in `lua/plugins/lsp.lua` is only `-Wall
--Wextra`, with no `-std` at all — one clangd process serves both languages.
-
-**Cross-compiling?** clangd finds a toolchain's system headers by *running* the
-compiler named in `compile_commands.json`, but only for drivers allow-listed
-with `--query-driver`, which is empty by default. Point it at an ARM or vendor
-GCC build without that and every `#include <...>` reports as missing while the
-same tree compiles cleanly — the most confusing clangd failure in embedded work.
-Set it per project (see [Project-local configuration](#project-local-configuration)):
+Start Neovim in the project directory to load its `.nvim.lua`. Neovim asks you to trust the file before running it.
 
 ```lua
-vim.g.clangd_query_driver = "/opt/toolchains/**/arm-none-eabi-*"
-```
-
-`$CLANGD_QUERY_DRIVER` works too. It is a comma-separated glob list and it
-executes whatever it matches, so keep it as narrow as the toolchain needs.
-
-Other C/C++ specifics:
-
-- `gf` on an `#include` works — `include/`, `inc/`, `src/` and `lib/` under the project root are added to `path`, along with the system include directories.
-- `K` is LSP hover; `<leader>K` opens the man page for the word under the cursor, trying section 3 then 2. Two different questions, two different keys.
-- `<leader>lh` switches between source and header (a clangd extension).
-- Comments default to `//` rather than `/* */`, so `gcc`/`gc` can comment out a region containing a block comment.
-- Background indexing is limited to half the available cores at low priority; on a large tree, indexing on all cores makes the editor unusable while it runs.
-
-## CUDA
-
-`.cu` / `.cuh` buffers are handled as C++ with extensions: clangd (it serves the `cuda` filetype), clang-format, the `cuda` treesitter parser, and the same `gf` / `<leader>K` / `<leader>lg` setup as C/C++. The toolkit is located by `lua/config/cuda.lua` — `g:cuda_home`, `$CUDA_HOME`/`$CUDA_PATH`, `nvcc` on `$PATH`, then `/usr/local/cuda` and the newest `/usr/local/cuda-*`.
-
-clangd parses CUDA with clang's frontend, not nvcc's, which takes two fixes that are applied automatically:
-
-- **CMake**: CUDA projects are configured with `-DCMAKE_CUDA_USE_RESPONSE_FILE_FOR_INCLUDES=OFF`. Otherwise nvcc's include paths sit in a `.rsp` file that clangd cannot read, and every project header in a `.cu` file reports as missing.
-- **`.clangd`**: `:CompileCommands` writes a CUDA section (scoped to `.cu`/`.cuh`) that adds `--cuda-path` and strips nvcc-only flags (`-gencode`, `-Xcompiler`, `--expt-*`, …). An existing `.clangd` is left alone, with a warning if it has no CUDA section.
-
-`<leader>bb` / `<leader>br` on a lone `.cu` file compile it with `nvcc -g -G`. nvcc's `file.cu(42): error:` messages are parsed into the quickfix list for every C-family build, including CMake builds started from a `.cpp` buffer. `<F5>` offers **Launch (cuda-gdb)** (cpptools driving cuda-gdb) first in `.cu` buffers and last in C/C++ ones, whenever cuda-gdb exists.
-
-macOS has no CUDA toolkit: `.cu` files still highlight and format, but clangd reports the CUDA headers as missing.
-
-## MATLAB
-
-`.m` files are detected by content (`%` comments → matlab, `#`/`end_try_catch` → octave, `#import` → objc); set `vim.g.filetype_m = "matlab"` in a project's `.nvim.lua` to force it.
-
-### One background MATLAB
-
-matlab_ls (MathWorks' language server) launches a headless MATLAB and keeps it
-running for as long as Neovim is open. This config uses that one session for
-everything:
-
-- **Editing** — Code Analyzer diagnostics, formatting (`<leader>lf`), go-to-definition, completion.
-- **Running** — `<leader>br`, `<leader>ms` and friends ([keys](#matlab)) evaluate in it. There is no 10–15 s start-up per run, and the workspace survives between runs the way it does in the Command Window.
-- **Debugging** — `<F5>` attaches nvim-dap and dap-ui to it (see [Debugger](#debugger-nvim-dap)).
-- **Figures** — see below.
-
-The install is found from `matlab` on `$PATH`, `/usr/local/MATLAB/R*`,
-`/opt/MATLAB/R*`, or `/Applications/MATLAB_R*.app` (newest wins); override with
-`vim.g.matlab_install_path` or `$MATLAB_ROOT`. Requires R2021b or later. The
-first MATLAB command after opening Neovim waits for it to start (a notification
-says so); later ones do not.
-
-Without MATLAB, matlab_ls is told not to launch it and keeps workspace-indexed
-completion, and `<leader>br` runs the file with Octave instead.
-
-### Command window and runtime errors
-
-`<leader>mc` opens `matlab://command`: Enter submits a command to the shared
-MATLAB session, Up/Down recall commands, and Tab completes from this Neovim
-session's command history (not MATLAB symbol completion). Escape returns to
-normal mode; `q` closes the window without losing history. Output goes to
-`matlab://output`; `<leader>mo` toggles it. Ctrl-C in the command prompt
-interrupts MATLAB, as does `<leader>mk` from a MATLAB source buffer.
-
-At evaluation completion, recognized MATLAB stack locations populate quickfix.
-Use `]q` / `[q` to jump to them and `<leader>xc` to open the list. Hyperlinked
-stack frames retain their exact paths; plain function names resolve only when
-there is a matching file relative to the project root. Output without locations
-leaves the existing quickfix list intact.
-
-### Project path
-
-The server already adds the workspace root (the `.git` root, else the cwd) to
-the path and `cd`s into it. Projects that build their own path get it set up
-automatically each time MATLAB starts, before anything else runs, by the first
-of:
-
-1. `vim.g.matlab_setup` in the project's `.nvim.lua` — any MATLAB command, e.g. `"run('tools/setup_paths.m')"` or `"addpath(genpath('src'))"`. Set it to `false` to turn setup off.
-2. A MATLAB project (`*.prj`) at the root → `openProject(…)`, which applies the project's path and runs its startup files, exactly as the desktop does.
-3. A `startup.m` at the root → `run(…)`.
-
-Because it is the language server's own MATLAB, the same path also drives its
-go-to-definition. After changing the setup script, `<leader>mp` (or
-`:MatlabSetup`) re-runs it.
-
-### Figures and plots
-
-The background MATLAB runs with full graphics (`-nodesktop`, not `-nodisplay`),
-so `plot`, `surf`, `imagesc`, `subplot`, App Designer-style UI figures and the
-rest open as normal, interactive MATLAB figure windows — rotate, zoom, data tips
-and all — wherever there is a display:
-
-- **macOS** — native windows. MATLAB runs without a Dock icon, so use Mission Control or `Cmd-`` to find them if they open behind the terminal.
-- **Rocky/RHEL desktop** — native X11/Wayland windows.
-- **Rocky/RHEL over SSH** — connect with `ssh -Y` (XQuartz on the Mac) *before* starting Neovim; the display is inherited by MATLAB. Complex 3D plots are slow over X forwarding; `opengl software` in the session helps, and a remote desktop (VNC, X2Go) is better still.
-- **No display at all** — MATLAB still renders figures, invisibly. `<leader>mf` exports every open figure to PNG (under `~/.cache/nvim/matlab-figures/`) and opens them in the system viewer, or lists the files when there is nothing to open them on.
-
-Figures close when Neovim exits, since the session goes with it. On exit the
-config asks MATLAB to quit (`close all force`, then `exit`) instead of leaving
-the language server to kill it: MATLAB treats a kill as a crash once any figure
-has been drawn, and the crash reporter would open after every session. MATLAB
-takes 15–20 seconds to finish shutting down after that, in the background.
-
-### Other
-
-- **`]]` / `[[`** jump between `%%` sections.
-- **`input()` / `keyboard`** prompts from a running script appear as a Neovim prompt; cancelling it interrupts the script.
-- **Tests** are not wired into neotest; run `runtests` via `<leader>mc`.
-
-## Python virtualenvs
-
-pyright and debugpy both default to whatever `python3` is first on `$PATH`,
-which is almost never the interpreter a project's dependencies are installed
-into. The failure is quiet rather than loud: imports resolve as missing, types
-degrade to `Unknown`, and the debugger runs the wrong interpreter.
-
-`lua/config/venv.lua` walks up from the project root looking for `.venv`,
-`venv`, `.env` or `env` (an activated `$VIRTUAL_ENV`, or an activated conda env
-other than `base`, wins over all of them; conda `base` is the last resort before
-`$PATH`) and
-feeds the result to pyright, debugpy, neotest's pytest runner, and `<leader>br`.
-It searches one directory at a time, so the nearest venv wins whatever it is
-called, and stops at the repository root (or `$HOME`). After creating a venv
-mid-session, `:VenvRefresh` re-detects it and restarts pyright.
-No plugin, no `fd`, nothing to configure — so it behaves identically on the
-air-gapped hosts.
-
-## The project root
-
-Builds, `:CompileCommands`, the debugger's executable picker, `<leader>ta`, the
-C/C++ `path`, and virtualenv lookup all need to know where the current project
-starts, and they all ask `lua/config/project.lua` — one marker list, so they
-cannot disagree with each other:
-
-```text
-compile_commands.json, CMakeLists.txt, Makefile, makefile,
-package.json, Cargo.toml, pyproject.toml, setup.py, .git
-```
-
-The search walks **up from the file you are editing**, not from the directory
-Neovim was started in, and stops at the first ancestor containing any marker
-(`:help vim.fs.root`). In a monorepo that means `services/api/main.py` gets
-`services/api`, and the cwd is only used when nothing matches. Editing a file
-outside the current project therefore builds, debugs and tests the project that
-file belongs to.
-
-## Project-local configuration
-
-`exrc` is enabled, so Neovim reads a `.nvim.lua` from the directory it was
-started in. Neovim 0.11+ asks once per file before running it and remembers the
-answer, so an untrusted repo cannot execute anything silently.
-
-```lua
--- .nvim.lua in a project root
+-- .nvim.lua
 require("config.project").setup({
   build_cmd = "ninja -C out/debug",
   run_cmd = "./out/debug/server --config dev.toml",
-  gdb_path = "/opt/toolchain/bin/arm-none-eabi-gdb",
-  clangd_query_driver = "/opt/toolchain/bin/arm-none-eabi-*",
-  matlab_setup = "run('tools/setup_paths.m')",
-  -- notrim = true, -- preserve existing trailing whitespace in this project
+  -- gdb_path = "/opt/toolchain/bin/arm-none-eabi-gdb",
+  -- clangd_query_driver = "/opt/toolchain/bin/arm-none-eabi-*",
+  -- matlab_setup = "run('tools/setup_paths.m')",
+  -- notrim = true,
 })
-
--- Machine-wide installation choices remain session globals:
-vim.g.cuda_home = "/usr/local/cuda-12.4"
-vim.g.matlab_install_path = "/usr/local/MATLAB/R2024b"
 ```
 
-Overrides are stored by project root, so switching buffers to another project
-uses that project's commands. `setup()` defaults to the startup project; pass
-an explicit absolute root as its second argument when registering another
-project in the same session. Neovim's `exrc` loads the startup configuration;
-opening another project's file does not automatically execute its `.nvim.lua`.
-You can register that project's settings explicitly with `setup(opts, root)`.
+Settings apply per project. Opening a different project's file does not load its `.nvim.lua`; register its overrides explicitly with `setup(options, absolute_root)`.
 
-Legacy globals `build_cmd`, `run_cmd`, `gdb_path`, `clangd_query_driver`,
-`matlab_setup`, and `notrim` still work for the startup project only.
-Environment variables remain session-wide fallbacks. The clangd query-driver
-setting is resolved separately when each project's server starts.
+Formatting is manual by default; `:FormatOnSave` toggles it for the session. Project formatter and linter configuration files take precedence. Trailing whitespace is trimmed on save, except in Markdown, patches, and commit messages. Use `:TrimToggle` for the current buffer, `:TrimToggle!` for the session, or `notrim = true` above for a project.
 
-Debug configurations can also come from a `.vscode/launch.json`, which nvim-dap
-reads automatically.
+## Offline install
 
-## Formatting
-
-Formatting is handled by [conform.nvim](https://github.com/stevearc/conform.nvim) and is **manual** — there is no format-on-save. Format the current buffer with `<leader>lf`.
-
-`:FormatOnSave` toggles automatic formatting for the session, for projects with
-a CI formatting gate where forgetting once costs a round trip.
-
-Trailing whitespace is trimmed on every save, except in markdown (hard line
-breaks), diffs/patches and commit messages. In a shared codebase that already
-has trailing whitespace, trimming turns a one-line change into a whole-file
-diff: `:TrimToggle` turns it off for the buffer, `:TrimToggle!` for every
-buffer, and `vim.g.notrim = true` in a project's `.nvim.lua` turns it off for
-that project.
-
-| Filetype | Formatter |
-| :--- | :--- |
-| C / C++ / CUDA | `clang-format` |
-| CMake | `cmake-format` |
-| Python | `ruff` (import sort + format); `isort` + `black` when the project configures `[tool.black]`/`[tool.isort]` or has `.isort.cfg` |
-| MATLAB | matlab_ls (MATLAB's own indenter; needs MATLAB) |
-| JS / TS / HTML / CSS / JSON / YAML / Markdown | `prettier` |
-| Lua | `stylua` |
-| Shell | `shfmt` |
-
-Indent widths in `lua/config/indent.lua` are kept in step with what these
-formatters actually emit, so hand-written and formatted code agree. Both
-`stylua` and `shfmt` default to **hard tabs**, so they are pinned to spaces —
-`shfmt` via `-i 2` in `lua/plugins/formatting.lua`, `stylua` via `.stylua.toml`
-(which, being a project file, only governs this repo).
-
-### C/C++ style
-
-The default C/C++ style lives in `lua/plugins/formatting.lua` (not in a global `~/.clang-format`): **K&R braces, 4-space indent, 120-column limit**. If a project provides its own `.clang-format`, conform detects it and uses that file instead (`--style=file`) — so per-project overrides just work by adding a `.clang-format` to the project.
-
-## Linting
-
-Each language is linted by exactly one thing, and wherever possible that thing
-is its language server — because a server can offer a **quick fix** for what it
-reports, which a standalone linter cannot.
-
-| Language | Linter | Runs as |
-| :--- | :--- | :--- |
-| C / C++ | clang-tidy | inside clangd |
-| Python | ruff | LSP server |
-| Shell | shellcheck | spawned by bashls |
-| JS / TS | eslint | LSP server (`<leader>a` → "fix all auto-fixable problems") |
-| Markdown | markdownlint | nvim-lint |
-| YAML | yamllint | nvim-lint |
-
-Only the last two have no language server, which is the entire reason
-`nvim-lint` is still installed. The eslint server attaches only where an eslint
-config exists, so projects without one see nothing.
-
-Both of those two are toned down, because their stock rules duplicate the
-formatter and drown out everything else — markdownlint's default put 58
-line-length errors on this README, yamllint's put 5 on the workflow file in this
-repo. prettier owns the layout of both filetypes and will not rewrap prose, so
-line-length (`MD013`, `line-length`), `document-start` and the `truthy` reading
-of GitHub Actions' `on:` key are switched off. Everything a formatter cannot
-fix — unlabelled code fences, duplicate keys, bad indentation, syntax errors —
-still reports.
-
-A project that ships its own `.markdownlint.*` or `.yamllint*` takes over
-completely, the same way a project `.clang-format` does. The file is located by
-walking up from the buffer, so it is found even when Neovim was started outside
-the project.
-
-## Plugins
-
-Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
-
-| Plugin | Purpose |
-| :--- | :--- |
-| `folke/tokyonight.nvim` | Colorscheme (night style) |
-| `folke/trouble.nvim` | Project-wide diagnostics panel |
-| `folke/persistence.nvim` | Session save/restore per working directory |
-| `nvim-lualine/lualine.nvim` | Status line |
-| `folke/noice.nvim` | Floating command line popup and notification UI |
-| `rcarriga/nvim-notify` | Toast notifications (used by noice) |
-| `MunifTanjim/nui.nvim` | UI component library (used by noice) |
-| `folke/which-key.nvim` | Keybinding hints |
-| `lukas-reineke/indent-blankline.nvim` | Indent guides |
-| `folke/todo-comments.nvim` | TODO/FIXME highlighting |
-| `nvim-treesitter/nvim-treesitter` | Syntax highlighting and folding (C, C++, Python, JS, TS, ASM, …) |
-| `nvim-treesitter/nvim-treesitter-context` | Sticky function/class context |
-| `nvim-treesitter/nvim-treesitter-textobjects` | Function/class/parameter text objects, movement, swapping |
-| `andymass/vim-matchup` | `%` over `#if`/`#endif`, `if`/`end`, `do`/`done`, HTML tags |
-| `windwp/nvim-autopairs` | Auto-close brackets and quotes |
-| `RRethy/vim-illuminate` | Highlights all uses of the word under cursor |
-| `kylechui/nvim-surround` | Surround motions |
-| `danymat/neogen` | Doc comment generation (doxygen, docstrings, JSDoc, LDoc) |
-| `mbbill/undotree` | Undo history browser |
-| `nvim-tree/nvim-tree.lua` | File explorer |
-| `stevearc/aerial.nvim` | LSP-powered symbols outline |
-| `nvim-telescope/telescope.nvim` | Fuzzy finder |
-| `MagicDuck/grug-far.nvim` | Project-wide search and replace (ripgrep) |
-| `mason-org/mason.nvim` | LSP/tool installer |
-| `mason-org/mason-lspconfig.nvim` | Bridges Mason with native `vim.lsp` config (Neovim 0.11+) |
-| `saghen/blink.cmp` | Completion engine (built-in snippets, cmdline completion, auto-brackets) |
-| `b0o/schemastore.nvim` | JSON schema catalog for jsonls |
-| `stevearc/conform.nvim` | Formatting — clang-format (C/C++), cmake-format, prettier, black/isort, stylua, shfmt |
-| `mfussenegger/nvim-lint` | Linting for markdown and yaml; every other language is linted by its LSP |
-| `mfussenegger/nvim-dap` | Debug adapter protocol |
-| `rcarriga/nvim-dap-ui` | Debug UI |
-| `mfussenegger/nvim-dap-python` | Python debug adapter (debugpy) |
-| `nvim-neotest/neotest` | Test runner UI, quickfix integration, debug-a-test |
-| `neotest-python` / `-jest` / `-vitest` / `-gtest` | Framework adapters (pytest, jest, vitest, gtest) |
-| `codelldb` / `cpptools` (Mason) | C/C++ debug adapters — LLDB (local macOS) and gdb/gdbserver (Linux) |
-| `js-debug-adapter` (Mason) | JavaScript / TypeScript debug adapter |
-| `bash-debug-adapter` (Mason) | Bash debug adapter (bashdb; needs bash >= 4) |
-| `tpope/vim-fugitive` | Git commands |
-| `lewis6991/gitsigns.nvim` | Git gutter signs and hunk actions |
-| `akinsho/toggleterm.nvim` | Horizontal split terminal |
-| `coder/claudecode.nvim` | Claude Code editor integration (selection context, native diffs) |
-
-## Recovery and regression checks
-
-Swap files and temporary write backups are enabled in Neovim's state directory,
-away from source trees. Persistent undo continues to use the existing data
-`undodir`, preserving previous undo history. Builds and file runs stop if saving
-fails. Build diagnostics resolve against the captured build directory, including
-when the editor's working directory changes while compilation is running.
-Project file searches, grep, and Git status use the current buffer's project root.
-
-Run the dependency-free checks with Neovim 0.12+:
+For air-gapped RHEL/Rocky, download an RPM from the **Build offline RPM** GitHub Actions workflow, or build one on a connected host with [`rpm/build-rpm.sh`](rpm/build-rpm.sh). Use the EL8 build for EL8/9 (requires Python 3.11), and the EL10 build for EL10 (requires Python 3.12).
 
 ```bash
-bash tests/run.sh
+sudo dnf install ./nvim-config-<version>-1.el8.x86_64.rpm
+nvim-config-install
+exec bash -l
+nvim
 ```
 
-The checks isolate Neovim's data/state/cache in a temporary directory and cover
-project overrides, CMake roots, virtualenv resolution, search scope, asynchronous
-build diagnostics, save failures, and recovery settings.
+Run `nvim-config-install` once per user. After upgrading the RPM, rerun it to activate the packaged configuration and tools.
+
+## Customize and troubleshoot
+
+- [`lua/config/keymaps.lua`](lua/config/keymaps.lua): core shortcuts; plugin shortcuts live in [`lua/plugins/`](lua/plugins/).
+- [`lua/config/options.lua`](lua/config/options.lua): editor settings.
+- [`lua/config/servers.lua`](lua/config/servers.lua), [`tools.lua`](lua/config/tools.lua), and [`parsers.lua`](lua/config/parsers.lua): installed language servers, tools, and parsers.
+- `:checkhealth` or `bash setup.sh health`: diagnose missing dependencies.
+- `:Mason`: inspect installed language tools; `:Lazy`: inspect plugins.
+- `bash tests/run.sh`: run this configuration's regression checks with Neovim 0.12+.
