@@ -99,10 +99,16 @@ end, { desc = "Toggle format-on-save for this session" })
 -- by default; with a bang, for every buffer this session. A project that wants
 -- it off permanently sets vim.g.notrim = true in its .nvim.lua.
 command("TrimToggle", function(opts)
-  local scope = opts.bang and vim.g or vim.b
-  scope.notrim = not scope.notrim
+  local disabled
+  if opts.bang then
+    vim.g.trim_disabled = not vim.g.trim_disabled
+    disabled = vim.g.trim_disabled
+  else
+    vim.b.notrim = not vim.b.notrim
+    disabled = vim.b.notrim
+  end
   vim.notify(("Trim whitespace on save (%s): %s"):format(
-    opts.bang and "all buffers" or "this buffer", scope.notrim and "off" or "on"))
+    opts.bang and "all buffers" or "this buffer", disabled and "off" or "on"))
 end, { bang = true, desc = "Toggle trailing-whitespace trim on save (! for all buffers)" })
 
 -- ── Python ────────────────────────────────────────────────────────────────────

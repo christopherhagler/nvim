@@ -22,6 +22,8 @@ local state = {
   pending = {},       -- requestId → on_done callback
   waiting = {},       -- callbacks queued until MATLAB connects
   next_id = 0,
+  trace = "",          -- raw output for the current user evaluation
+  trace_root = nil,
   bridge = nil,       -- the active debug session, if any (matlab_dap.lua)
   out_buf = nil,
   out_win = nil,
@@ -114,8 +116,13 @@ end
 function M.eval(code, opts)
   opts = opts or {}
   when_ready(function(c)
+    if not opts.silent then
+      state.trace = ""
+      state.trace_root = c.config.root_dir or require("config.project").root()
+    end
     state.next_id = state.next_id + 1
     local id = state.next_id
+    if not opts.silent then state.trace_id = id end
     state.pending[id] = opts.on_done or false
     if opts.echo ~= false and not opts.silent then
       local first = vim.split(code, "\n")[1]
@@ -148,7 +155,13 @@ end
 --- folder while it executes, so the script's own neighbours resolve.
 function M.run_file(path, opts)
   path = path or vim.fn.expand("%:p")
-  if vim.bo.modified then vim.cmd("silent! write") end
+  if vim.bo.modified then
+    local ok, err = pcall(vim.cmd, "silent update")
+    if not ok then
+      vim.notify("Save failed; run cancelled: " .. tostring(err), vim.log.levels.ERROR)
+      return
+    end
+  end
   M.eval("run(" .. M.quote(path) .. ")", opts)
 end
 
@@ -228,7 +241,7 @@ end
 --- @param root string
 --- @return string|nil command, string|nil description
 function M.setup_command(root)
-  local g = vim.g.matlab_setup
+  local g = require("config.project").get("matlab_setup", root)
   if g == false then return nil end
   if type(g) == "string" and g ~= "" then return g, "g:matlab_setup" end
 
@@ -283,6 +296,7 @@ M.handlers = {
   end,
 
   text = function(_, params)
+    state.trace = state.trace .. (params.text or "")
     local text = clean(params.text or "")
     if state.bridge then
       state.bridge.output(text, params.stream == 1 and "stderr" or "stdout")
@@ -308,6 +322,14 @@ M.handlers = {
   end,
 
   evalResponse = function(_, params)
+    if state.trace_root and params.requestId == state.trace_id then
+      local items = require("config.matlab_errors").parse(state.trace, state.trace_root)
+      if #items > 0 then
+        vim.fn.setqflist({}, " ", { title = "MATLAB runtime errors", items = items })
+        vim.notify("MATLAB: " .. #items .. " stack location(s); use ]q / [q or <leader>xc", vim.log.levels.WARN)
+      end
+      state.trace, state.trace_root = "", nil
+    end
     local cb = state.pending[params.requestId]
     state.pending[params.requestId] = nil
     if cb then cb() end

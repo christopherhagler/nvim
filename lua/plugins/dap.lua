@@ -148,7 +148,7 @@ return {
       --   • $GDB            — environment variable
       --   • "gdb"           — from $PATH (fallback)
       local function gdb_path()
-        return vim.g.gdb_path or vim.env.GDB or "gdb"
+        return require("config.project").get("gdb_path") or vim.env.GDB or "gdb"
       end
 
       -- Choosing what to debug used to be a bare vim.fn.input() with no
@@ -425,7 +425,7 @@ return {
       -- the session dies before dap-ui has anything to show, and the picker
       -- keeps offering it. A gdb set explicitly (g:gdb_path / $GDB) always
       -- counts, since that is a deliberate choice.
-      local has_gdb = vim.g.gdb_path ~= nil or vim.env.GDB ~= nil or vim.fn.executable("gdb") == 1
+      local has_gdb = require("config.project").get("gdb_path") ~= nil or vim.env.GDB ~= nil or vim.fn.executable("gdb") == 1
       local has_lldb = vim.fn.executable(vim.fn.stdpath("data") .. "/mason/bin/codelldb") == 1
       local first, second = lldb_cfgs, gdb_cfgs
       if vim.fn.has("mac") == 0 then first, second = gdb_cfgs, lldb_cfgs end

@@ -410,7 +410,7 @@ matlab_ls keeps alive (see [MATLAB](#matlab)); output appears in a
 | `<leader>br` / `<leader>mr` | Run the current file (`run('…')`, with the project path set up) |
 | `<leader>ms` | Run the current `%%` section (visual: run the selected lines) |
 | `<leader>ml` | Run the current line |
-| `<leader>mc` | Type a command at a `>>` prompt |
+| `<leader>mc` | Open the persistent `>>` command window |
 | `<leader>mh` | `help` for the word under the cursor |
 | `<leader>mw` | `whos` — list workspace variables |
 | `<leader>mk` | Interrupt (Ctrl-C) |
@@ -816,6 +816,21 @@ says so); later ones do not.
 Without MATLAB, matlab_ls is told not to launch it and keeps workspace-indexed
 completion, and `<leader>br` runs the file with Octave instead.
 
+### Command window and runtime errors
+
+`<leader>mc` opens `matlab://command`: Enter submits a command to the shared
+MATLAB session, Up/Down recall commands, and Tab completes from this Neovim
+session's command history (not MATLAB symbol completion). Escape returns to
+normal mode; `q` closes the window without losing history. Output goes to
+`matlab://output`; `<leader>mo` toggles it. Ctrl-C in the command prompt
+interrupts MATLAB, as does `<leader>mk` from a MATLAB source buffer.
+
+At evaluation completion, recognized MATLAB stack locations populate quickfix.
+Use `]q` / `[q` to jump to them and `<leader>xc` to open the list. Hyperlinked
+stack frames retain their exact paths; plain function names resolve only when
+there is a matching file relative to the project root. Output without locations
+leaves the existing quickfix list intact.
+
 ### Project path
 
 The server already adds the workspace root (the `.git` root, else the cwd) to
@@ -900,18 +915,31 @@ answer, so an untrusted repo cannot execute anything silently.
 
 ```lua
 -- .nvim.lua in a project root
-vim.g.build_cmd = "ninja -C out/debug"        -- overrides <leader>bb detection
-vim.g.run_cmd   = "./out/debug/server --config dev.toml"
-vim.g.gdb_path  = "/opt/toolchain/bin/arm-none-eabi-gdb"  -- used by the DAP configs
-vim.g.clangd_query_driver = "/opt/toolchain/bin/arm-none-eabi-*"  -- see C/C++ setup
-vim.g.cuda_home = "/usr/local/cuda-12.4"      -- pin a CUDA toolkit (see CUDA)
-vim.g.matlab_setup = "run('tools/setup_paths.m')"  -- MATLAB path setup (see MATLAB)
-vim.g.matlab_install_path = "/usr/local/MATLAB/R2024b"  -- pin a MATLAB release
+require("config.project").setup({
+  build_cmd = "ninja -C out/debug",
+  run_cmd = "./out/debug/server --config dev.toml",
+  gdb_path = "/opt/toolchain/bin/arm-none-eabi-gdb",
+  clangd_query_driver = "/opt/toolchain/bin/arm-none-eabi-*",
+  matlab_setup = "run('tools/setup_paths.m')",
+  -- notrim = true, -- preserve existing trailing whitespace in this project
+})
+
+-- Machine-wide installation choices remain session globals:
+vim.g.cuda_home = "/usr/local/cuda-12.4"
+vim.g.matlab_install_path = "/usr/local/MATLAB/R2024b"
 ```
 
-`.nvim.lua` is sourced before the first buffer is read, so settings the LSP
-configuration consults — `clangd_query_driver` among them — are in place by the
-time the server starts.
+Overrides are stored by project root, so switching buffers to another project
+uses that project's commands. `setup()` defaults to the startup project; pass
+an explicit absolute root as its second argument when registering another
+project in the same session. Neovim's `exrc` loads the startup configuration;
+opening another project's file does not automatically execute its `.nvim.lua`.
+You can register that project's settings explicitly with `setup(opts, root)`.
+
+Legacy globals `build_cmd`, `run_cmd`, `gdb_path`, `clangd_query_driver`,
+`matlab_setup`, and `notrim` still work for the startup project only.
+Environment variables remain session-wide fallbacks. The clangd query-driver
+setting is resolved separately when each project's server starts.
 
 Debug configurations can also come from a `.vscode/launch.json`, which nvim-dap
 reads automatically.
@@ -1030,3 +1058,22 @@ Managed by [lazy.nvim](https://github.com/folke/lazy.nvim).
 | `lewis6991/gitsigns.nvim` | Git gutter signs and hunk actions |
 | `akinsho/toggleterm.nvim` | Horizontal split terminal |
 | `coder/claudecode.nvim` | Claude Code editor integration (selection context, native diffs) |
+
+## Recovery and regression checks
+
+Swap files and temporary write backups are enabled in Neovim's state directory,
+away from source trees. Persistent undo continues to use the existing data
+`undodir`, preserving previous undo history. Builds and file runs stop if saving
+fails. Build diagnostics resolve against the captured build directory, including
+when the editor's working directory changes while compilation is running.
+Project file searches, grep, and Git status use the current buffer's project root.
+
+Run the dependency-free checks with Neovim 0.12+:
+
+```bash
+bash tests/run.sh
+```
+
+The checks isolate Neovim's data/state/cache in a temporary directory and cover
+project overrides, CMake roots, virtualenv resolution, search scope, asynchronous
+build diagnostics, save failures, and recovery settings.

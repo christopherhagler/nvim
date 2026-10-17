@@ -39,10 +39,17 @@ opt.incsearch  = true
 
 -- Files
 opt.backup       = false
-opt.writebackup  = false
-opt.swapfile     = false
+opt.writebackup  = true
+opt.swapfile     = true
+local state = vim.fn.stdpath("state")
+for _, name in ipairs({ "swap", "backup" }) do
+  vim.fn.mkdir(state .. "/" .. name, "p", "0700")
+end
+opt.directory = state .. "/swap//"
+opt.backupdir = state .. "/backup//"
 opt.undofile     = true
 opt.undodir      = vim.fn.stdpath("data") .. "/undodir"
+vim.fn.mkdir(vim.fn.stdpath("data") .. "/undodir", "p", "0700")
 
 -- Project-local config: Neovim sources .nvim.lua / .nvimrc / .exrc from the
 -- directory it was started in. 0.11+ asks once per file before running it and
@@ -88,3 +95,6 @@ opt.confirm     = true
 opt.foldmethod = "expr"
 opt.foldexpr   = "v:lua.vim.treesitter.foldexpr()"
 opt.foldlevel  = 99
+
+-- Capture the startup project before project-local config is sourced.
+require("config.project")

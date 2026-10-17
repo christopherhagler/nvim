@@ -14,8 +14,10 @@
 -- Both accept a project-local override from a .nvim.lua (see 'exrc' in
 -- lua/config/options.lua), which is how a project with an unusual toolchain
 -- opts out of the detection below:
---   vim.g.build_cmd = "ninja -C out/debug"
---   vim.g.run_cmd   = "./out/debug/server --config dev.toml"
+--   require("config.project").setup({
+--     build_cmd = "ninja -C out/debug",
+--     run_cmd = "./out/debug/server --config dev.toml",
+--   })
 
 local M = {}
 
@@ -152,7 +154,8 @@ end
 --- project with both CMakeLists.txt and a wrapper Makefile wants cmake.
 --- @return string|nil cmd, string label
 function M.build_cmd()
-  if vim.g.build_cmd then return vim.g.build_cmd, "g:build_cmd" end
+  local override = require("config.project").get("build_cmd")
+  if override then return override, "project build_cmd" end
 
   local root = M.root()
   if exists(root, "CMakeLists.txt") then
@@ -176,13 +179,31 @@ function M.build_cmd()
   return nil, "none"
 end
 
+-- A failed write must never launch code from an older version on disk.
+local function save(command)
+  local ok, err = pcall(vim.cmd, "silent " .. command)
+  if not ok then
+    vim.notify("Save failed; command cancelled: " .. tostring(err), vim.log.levels.ERROR)
+    return false
+  end
+  local buffers = command == "wall" and vim.api.nvim_list_bufs() or { vim.api.nvim_get_current_buf() }
+  for _, buf in ipairs(buffers) do
+    local bo = vim.bo[buf]
+    if bo.modified and bo.buftype == "" and (command ~= "wall" or bo.buflisted) then
+      vim.notify("Save failed; command cancelled: buffer still has unsaved changes", vim.log.levels.ERROR)
+      return false
+    end
+  end
+  return true
+end
+
 local job = nil
 
 --- Whether build() would find something to build for the current buffer, used
 --- by <leader>bd: an interpreted file has no build step, and debugging it
 --- should not wait on one.
 function M.has_build()
-  if vim.g.build_cmd then return true end
+  if require("config.project").get("build_cmd") then return true end
   local root = M.root()
   for _, name in ipairs({ "CMakeLists.txt", "Makefile", "makefile", "Cargo.toml" }) do
     if exists(root, name) then return true end
@@ -221,21 +242,23 @@ function M.build(cmd, on_success)
   -- with the shell format from a .sh buffer gave an empty quickfix list.
   local efm = (label == "single file" and ERRORFORMAT[vim.bo.filetype])
     or (NVCC_EFM .. "," .. vim.o.errorformat)
-  vim.cmd("silent! wall")
+  if not save("wall") then return end
   vim.notify(("Building (%s): %s"):format(label, cmd), vim.log.levels.INFO)
 
   -- detach: the build gets its own process group, so <leader>bk can signal
   -- cmake/make/the compilers as well as the sh wrapper (see stop()).
-  job = vim.system({ "sh", "-c", cmd }, { cwd = root, text = true, detach = true }, vim.schedule_wrap(function(res)
+  job = vim.system({ "sh", "-c", "exec 2>&1\n" .. cmd }, { cwd = root, text = true, detach = true }, vim.schedule_wrap(function(res)
     job = nil
-    -- Compilers write diagnostics to stderr and progress to stdout; the
-    -- quickfix list wants both, in that order.
+    -- Merge streams in the shell so directory messages and diagnostics stay
+    -- in order; make's directory stack depends on their original sequence.
     local output = (res.stderr or "") .. (res.stdout or "")
-    vim.fn.setqflist({}, " ", {
-      title = cmd,
-      lines = vim.split(output, "\n", { trimempty = true }),
-      efm = efm,
-    })
+    -- Seed errorformat's directory stack with the captured build root.
+    -- This also preserves make's nested Entering/Leaving directory handling.
+    local lines = vim.split(output, "\n", { trimempty = true })
+    table.insert(lines, 1, "NVIM_BUILD_ROOT:" .. root)
+    local parsed = vim.fn.getqflist({ lines = lines, efm = "%DNVIM_BUILD_ROOT:%f," .. efm }).items
+    table.remove(parsed, 1) -- synthetic directory line
+    vim.fn.setqflist({}, " ", { title = cmd, items = parsed })
 
     local items = vim.fn.getqflist()
     local valid = #vim.tbl_filter(function(i) return i.valid == 1 end, items)
@@ -270,7 +293,8 @@ end
 -- Interpreter/command for running the current file. C and C++ compile first and
 -- run the result, chained with && so a failed compile never runs a stale binary.
 local function run_cmd()
-  if vim.g.run_cmd then return vim.g.run_cmd end
+  local override = require("config.project").get("run_cmd")
+  if override then return override end
 
   local file = vim.fn.shellescape(vim.fn.expand("%:p"))
   local ft = vim.bo.filetype
@@ -327,7 +351,7 @@ function M.run()
   local cmd, root = run_cmd(), nil
   if cmd then
     root = M.root()
-    if vim.bo.buftype == "" then vim.cmd("silent! write") end
+    if vim.bo.buftype == "" and not save("update") then return end
   else
     cmd, root = last_cmd, last_root
   end

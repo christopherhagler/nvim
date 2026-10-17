@@ -15,6 +15,30 @@
 
 local M = {}
 
+-- Capture startup scope before :cd or another project changes the context.
+local startup_dir = vim.uv.cwd()
+local startup_root
+local settings = {}
+
+--- Register overrides from .nvim.lua. Pass a root when configuring another tree.
+--- @param opts table
+--- @param root string|nil
+function M.setup(opts, root)
+  root = vim.fs.normalize(root or startup_root)
+  settings[root] = vim.tbl_extend("force", settings[root] or {}, opts)
+end
+
+--- Project settings win; legacy globals belong only to the startup project.
+--- @param key string
+--- @param root string|nil
+--- @return any
+function M.get(key, root)
+  root = root or M.root()
+  local value = (settings[vim.fs.normalize(root)] or {})[key]
+  if value ~= nil then return value end
+  if root == startup_root then return vim.g[key] end
+end
+
 -- Build-system and packaging files, plus .git as the universal last resort.
 -- compile_commands.json is included because a vendored subtree can carry one
 -- without a CMakeLists.txt beside it, and that is the directory clangd cares
@@ -64,5 +88,7 @@ function M.root(source)
   if has_cmakelists(root) then return cmake_top(root) end
   return root
 end
+
+startup_root = M.root(startup_dir)
 
 return M

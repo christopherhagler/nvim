@@ -279,14 +279,19 @@ return {
         "/opt/rh/gcc-toolset-*/root/usr/bin/cc", "/opt/rh/gcc-toolset-*/root/usr/bin/c++",
         "/opt/homebrew/bin/gcc-*", "/opt/homebrew/bin/g++-*",
       }, ",")
-      local query_driver = vim.g.clangd_query_driver or vim.env.CLANGD_QUERY_DRIVER
-        or default_query_driver
-      if query_driver ~= "" then
-        table.insert(clangd_cmd, "--query-driver=" .. query_driver)
-      end
-
       vim.lsp.config("clangd", {
-        cmd = clangd_cmd,
+        cmd = function(dispatchers, config)
+          local query_driver = require("config.project").get("clangd_query_driver", config.root_dir)
+          if query_driver == nil then query_driver = vim.env.CLANGD_QUERY_DRIVER or default_query_driver end
+          -- Copy: clients in different projects must not share command mutations.
+          local cmd = vim.deepcopy(clangd_cmd)
+          if query_driver ~= "" then
+            table.insert(cmd, "--query-driver=" .. query_driver)
+          end
+          return vim.lsp.rpc.start(cmd, dispatchers, {
+            cwd = config.cmd_cwd, env = config.cmd_env, detached = config.detached,
+          })
+        end,
         -- Without a compile_commands.json, clangd has to guess how each file is
         -- compiled and reports every project header as missing. These flags are
         -- the guess it uses until :CompileCommands generates the real thing

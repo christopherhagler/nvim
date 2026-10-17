@@ -14,7 +14,8 @@ autocmd("BufWritePre", {
   callback = function(ev)
     local bo = vim.bo[ev.buf]
     if NO_TRIM[bo.filetype] or bo.buftype ~= "" or not bo.modifiable then return end
-    if vim.g.notrim or vim.b[ev.buf].notrim then return end
+    if vim.g.trim_disabled or vim.b[ev.buf].notrim
+      or require("config.project").get("notrim", require("config.project").root(ev.buf)) then return end
     local view = vim.fn.winsaveview()
     -- keeppatterns: without it the substitution becomes the last search
     -- pattern, so every save leaves trailing whitespace lit up by 'hlsearch'
