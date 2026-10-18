@@ -446,13 +446,18 @@ build_rpm() {
   # RPM versions must start with a digit (e.g. bare commit-hash fallbacks)
   case "$version" in [0-9]*) ;; *) version="0.$version" ;; esac
 
+  # The distro interpreter's path, which is what the target will have — not
+  # whatever copy (/usr/local/bin, a pyenv shim) is first on this host's PATH
+  local python_dep="/usr/bin/$PYTHON_BIN"
+  [ -x "$python_dep" ] || python_dep="$(command -v "$PYTHON_BIN")"
+
   info "Building RPM (version $version)..."
   mkdir -p "$WORK/rpmbuild" "$DIST"
   rpmbuild -bb \
     --define "_topdir $WORK/rpmbuild" \
     --define "payload_root $ROOT" \
     --define "pkg_version $version" \
-    --define "python_dep $(command -v "$PYTHON_BIN")" \
+    --define "python_dep $python_dep" \
     "$REPO_ROOT/rpm/nvim-config.spec"
 
   local out

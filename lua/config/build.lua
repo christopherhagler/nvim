@@ -290,6 +290,15 @@ function M.stop()
   vim.notify("Build stopped", vim.log.levels.WARN)
 end
 
+-- The build is detached (its own process group), so Neovim exiting no longer
+-- takes it down with it; do that explicitly.
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  group = vim.api.nvim_create_augroup("build_stop_on_exit", { clear = true }),
+  callback = function()
+    if job then pcall(vim.uv.kill, -job.pid, "sigterm") end
+  end,
+})
+
 -- Interpreter/command for running the current file. C and C++ compile first and
 -- run the result, chained with && so a failed compile never runs a stale binary.
 local function run_cmd()

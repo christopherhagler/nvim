@@ -230,11 +230,34 @@ end
 
 -- ── Project path ─────────────────────────────────────────────────────────────
 
+-- Path scripts chosen with :MatlabSetup <file>, remembered per project root —
+-- for the common case of a setpaths.m / addpaths.m that is not called
+-- startup.m, without needing a trusted .nvim.lua to say so.
+local SCRIPTS = vim.fn.stdpath("state") .. "/matlab-setup.json"
+
+local function load_scripts()
+  local ok, data = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(SCRIPTS), "\n")) end)
+  return ok and type(data) == "table" and data or {}
+end
+
+local function project_root(c)
+  return (c and c.config.root_dir) or require("config.project").root()
+end
+
+--- Remember `path` as this project's path script (nil forgets it).
+function M.set_setup_script(path)
+  local scripts = load_scripts()
+  scripts[project_root(client())] = path and vim.fn.fnamemodify(path, ":p") or nil
+  vim.fn.mkdir(vim.fs.dirname(SCRIPTS), "p")
+  vim.fn.writefile({ vim.json.encode(scripts) }, SCRIPTS)
+end
+
 --- The MATLAB command that sets up this project's path, or nil.
 ---
 --- Explicit wins: vim.g.matlab_setup in the project's .nvim.lua (a MATLAB
---- command string; false disables the detection below). Otherwise, the two
---- conventions MATLAB itself follows:
+--- command string; false disables the detection below), then a script chosen
+--- with :MatlabSetup <file>. Otherwise, the two conventions MATLAB itself
+--- follows:
 ---   • a MATLAB project (*.prj) at the root → openProject, which applies the
 ---     project's path, runs its startup files, and is what the desktop does
 ---   • a startup.m at the root → run it, as MATLAB would if started there
@@ -244,6 +267,11 @@ function M.setup_command(root)
   local g = require("config.project").get("matlab_setup", root)
   if g == false then return nil end
   if type(g) == "string" and g ~= "" then return g, "g:matlab_setup" end
+
+  local script = load_scripts()[root]
+  if script and vim.uv.fs_stat(script) then
+    return "run(" .. M.quote(script) .. ")", vim.fs.basename(script)
+  end
 
   local prj = vim.fn.glob(root .. "/*.prj", false, true)[1]
   if prj then return "openProject(" .. M.quote(prj) .. ")", vim.fs.basename(prj) end
@@ -257,7 +285,7 @@ end
 function M.setup_project(c, on_done)
   c = c or client()
   if not c then return end
-  local root = c.config.root_dir or require("config.project").root()
+  local root = project_root(c)
   local cmd, what = M.setup_command(root)
   local function done()
     state.setup_done[c.id] = true

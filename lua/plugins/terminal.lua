@@ -3,10 +3,9 @@ return {
     "akinsho/toggleterm.nvim",
     version = "*",
     -- <C-\> toggles; <leader>tt is the discoverable alias (tests own the rest
-    -- of <leader>t). Inside a toggleterm terminal <C-\> also toggles
-    -- (open_mapping below), so it can be dismissed without leaving terminal
-    -- mode first. That mapping is buffer-local on purpose: everywhere else
-    -- <C-\> must stay the start of <C-\><C-n>.
+    -- of <leader>t). Not mapped in terminal mode (terminal_mappings below):
+    -- there <C-\> must stay the start of <C-\><C-n>, so a terminal is hidden
+    -- with <Esc><Esc> then <C-\>.
     keys = {
       { "<C-\\>", "<cmd>ToggleTerm<cr>", desc = "Toggle terminal" },
       { "<leader>tt", "<cmd>ToggleTerm<cr>", desc = "Toggle terminal" },
@@ -22,7 +21,7 @@ return {
         end,
         open_mapping      = [[<C-\>]],
         insert_mappings   = false,
-        terminal_mappings = true,
+        terminal_mappings = false,
         direction     = "horizontal",
         shade_terminals = true,
         persist_size  = true,

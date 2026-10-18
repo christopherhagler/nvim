@@ -41,6 +41,10 @@ map("n", "<leader>mh", function() session.eval("help " .. vim.fn.expand("<cword>
 map("n", "<leader>mk", session.interrupt, "Interrupt (Ctrl-C)")
 map("n", "<leader>mo", session.toggle_output, "Toggle output")
 map("n", "<leader>mp", function() session.setup_project() end, "Re-run project path setup")
+map("n", "<leader>mP", function()
+  session.set_setup_script(vim.fn.expand("%:p"))
+  session.setup_project()
+end, "Use this file as project path setup")
 map("n", "<leader>mw", function() session.eval("whos") end, "Workspace variables")
 -- Figures open as normal windows wherever there is a display; <leader>mf is for
 -- when there is not (plain SSH to a Rocky/RHEL box)

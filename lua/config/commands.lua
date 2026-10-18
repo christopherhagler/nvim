@@ -71,9 +71,21 @@ command("Matlab", function(opts)
   require("config.matlab_session").eval(opts.args)
 end, { nargs = "+", desc = "Evaluate MATLAB code in the background session" })
 
-command("MatlabSetup", function()
-  require("config.matlab_session").setup_project()
-end, { desc = "Re-run the project's MATLAB path setup (.prj / startup.m / g:matlab_setup)" })
+-- :MatlabSetup re-runs the path setup; :MatlabSetup setpaths.m makes that
+-- script the project's path setup (remembered) and runs it; :MatlabSetup!
+-- forgets the remembered script.
+command("MatlabSetup", function(opts)
+  local session = require("config.matlab_session")
+  if opts.bang then
+    session.set_setup_script(nil)
+  elseif opts.args ~= "" then
+    session.set_setup_script(vim.fn.expand(opts.args))
+  end
+  session.setup_project()
+end, {
+  nargs = "?", bang = true, complete = "file",
+  desc = "MATLAB path setup: re-run, or set a script (remembered per project), ! to forget",
+})
 
 -- ── Formatting ────────────────────────────────────────────────────────────────
 -- Off by default, matching <leader>lf being the normal way to format here. This

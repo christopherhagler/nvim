@@ -256,6 +256,9 @@ return {
         "--header-insertion=iwyu",
         "--completion-style=detailed",
         "--function-arg-placeholders=true",
+        -- clangd's default (info) writes a stderr line for every request, and
+        -- Neovim records server stderr in lsp.log — gigabytes over a few months
+        "--log=error",
         -- Complete symbols that aren't visible yet and add the #include for
         -- them — the main reason to prefer clangd over ctags in a big tree.
         "--all-scopes-completion",
