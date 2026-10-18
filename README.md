@@ -115,7 +115,7 @@ With MATLAB installed, code runs in the persistent session managed by the langua
 - `<leader>mc` opens the command window; `<leader>mk` interrupts; `<leader>mo` toggles output.
 - `<leader>mf` exports figures to PNG; `<F5>` starts debugging.
 
-Project paths load from a root `.prj`, `startup.m`, or a custom `matlab_setup` command. Use `:MatlabSetup` to reload them and `:Matlab <code>` to evaluate code. Run MATLAB tests with `runtests` in the command window. Without MATLAB, Octave can run scripts; full language and debugging features require MATLAB.
+Project paths load from a custom `matlab_setup` command, a script chosen with `:MatlabSetup path/to/script.m` (or `<leader>mP` in that script; remembered per project, `:MatlabSetup!` forgets it), a root `.prj`, or a root `startup.m` or `start.m`. Use `:MatlabSetup` to reload them and `:Matlab <code>` to evaluate code. Run MATLAB tests with `runtests` in the command window. Without MATLAB, Octave can run scripts; full language and debugging features require MATLAB.
 
 ## Project configuration
 

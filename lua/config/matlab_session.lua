@@ -254,13 +254,14 @@ end
 
 --- The MATLAB command that sets up this project's path, or nil.
 ---
---- Explicit wins: vim.g.matlab_setup in the project's .nvim.lua (a MATLAB
---- command string; false disables the detection below), then a script chosen
---- with :MatlabSetup <file>. Otherwise, the two conventions MATLAB itself
---- follows:
+--- Explicit wins: matlab_setup in the project's .nvim.lua (config.project
+--- setup(); a MATLAB command string, false disables the detection below),
+--- then a script chosen
+--- with :MatlabSetup <file>. Otherwise, by convention:
 ---   • a MATLAB project (*.prj) at the root → openProject, which applies the
 ---     project's path, runs its startup files, and is what the desktop does
 ---   • a startup.m at the root → run it, as MATLAB would if started there
+---   • a start.m at the root → run it
 --- @param root string
 --- @return string|nil command, string|nil description
 function M.setup_command(root)
@@ -275,8 +276,11 @@ function M.setup_command(root)
 
   local prj = vim.fn.glob(root .. "/*.prj", false, true)[1]
   if prj then return "openProject(" .. M.quote(prj) .. ")", vim.fs.basename(prj) end
-  if vim.uv.fs_stat(root .. "/startup.m") then
-    return "run(" .. M.quote(root .. "/startup.m") .. ")", "startup.m"
+  -- start.m: the name this user's projects give their path-setup script
+  for _, name in ipairs({ "startup.m", "start.m" }) do
+    if vim.uv.fs_stat(root .. "/" .. name) then
+      return "run(" .. M.quote(root .. "/" .. name) .. ")", name
+    end
   end
   return nil
 end
