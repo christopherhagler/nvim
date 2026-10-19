@@ -34,8 +34,9 @@ return {
       { "<leader>to", function() require("neotest").output.open({ enter = true, auto_close = true }) end, desc = "Show test output" },
       { "<leader>tp", function() require("neotest").output_panel.toggle() end, desc = "Toggle output panel" },
       { "<leader>tw", function() require("neotest").watch.toggle(vim.fn.expand("%")) end, desc = "Watch file" },
-      { "]t", function() require("neotest").jump.next({ status = "failed" }) end, desc = "Next failed test" },
-      { "[t", function() require("neotest").jump.prev({ status = "failed" }) end, desc = "Prev failed test" },
+      -- ]x / [x, not ]t / [t: those are Neovim's :tnext / :tprevious (ctags)
+      { "]x", function() require("neotest").jump.next({ status = "failed" }) end, desc = "Next failed test" },
+      { "[x", function() require("neotest").jump.prev({ status = "failed" }) end, desc = "Prev failed test" },
     },
     config = function()
       -- Adapters are constructed defensively: they are separate projects on

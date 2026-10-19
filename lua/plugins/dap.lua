@@ -45,6 +45,11 @@ return {
       { "<leader>dv", function() require("dapui").eval(nil, { enter = true }) end,
         mode = { "n", "x" }, desc = "Evaluate expression" },
       { "<leader>dx", function() require("dap").clear_breakpoints() end, desc = "Clear all breakpoints" },
+      -- gdb's up / down: walk the call stack without opening the UI
+      { "<leader>dk", function() require("dap").up() end,   desc = "Stack frame up (caller)" },
+      { "<leader>dj", function() require("dap").down() end, desc = "Stack frame down" },
+      { "<leader>dh", function() require("dap.ui.widgets").hover() end,
+        mode = { "n", "x" }, desc = "Hover value" },
 
       -- VSCode-style function-key debugging
       { "<F5>",    function() require("dap").continue() end,          desc = "Debug: Continue / Start" },
@@ -53,6 +58,8 @@ return {
       { "<F10>",   function() require("dap").step_over() end,         desc = "Debug: Step over" },
       { "<F11>",   function() require("dap").step_into() end,         desc = "Debug: Step into" },
       { "<S-F11>", function() require("dap").step_out() end,          desc = "Debug: Step out" },
+      -- Unshifted, for tmux/SSH where <S-F11> often never arrives
+      { "<F12>",   function() require("dap").step_out() end,          desc = "Debug: Step out" },
     },
     config = function()
       local dap = require("dap")

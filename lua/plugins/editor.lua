@@ -102,14 +102,17 @@ return {
         end
       end
 
-      -- Movement. ]c / [c are left alone: gitsigns owns them for hunks.
+      -- Movement. ]c / [c are left alone: gitsigns owns them for hunks. So
+      -- are ]] / [[: Vim's own "next/prev { in column 0" is the C function
+      -- jump, with decades of d]] / y[[ muscle memory behind it; class jumps
+      -- are ]k / [k instead.
       local moves = {
         ["]f"] = { move.goto_next_start, "@function.outer", "Next function" },
         ["[f"] = { move.goto_previous_start, "@function.outer", "Prev function" },
         ["]F"] = { move.goto_next_end, "@function.outer", "Next function end" },
         ["[F"] = { move.goto_previous_end, "@function.outer", "Prev function end" },
-        ["]]"] = { move.goto_next_start, "@class.outer", "Next class" },
-        ["[["] = { move.goto_previous_start, "@class.outer", "Prev class" },
+        ["]k"] = { move.goto_next_start, "@class.outer", "Next class" },
+        ["[k"] = { move.goto_previous_start, "@class.outer", "Prev class" },
       }
       for lhs, spec in pairs(moves) do
         vim.keymap.set({ "n", "x", "o" }, lhs, function()

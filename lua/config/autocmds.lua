@@ -105,9 +105,9 @@ autocmd("TermOpen", {
     if not vim.fs.basename(vim.split(command, " ")[1] or ""):find("claude", 1, true) then
       vim.keymap.set("t", "<Esc><Esc>", "<C-\\><C-n>", opts("Leave terminal mode"))
     end
+    -- Left and down only: <C-k> (kill line) and <C-l> (clear screen) are the
+    -- shell's own and are used far more there; <Esc><Esc> first, then the key
     vim.keymap.set("t", "<C-h>", "<C-\\><C-n><C-w>h", opts("Window left"))
     vim.keymap.set("t", "<C-j>", "<C-\\><C-n><C-w>j", opts("Window down"))
-    vim.keymap.set("t", "<C-k>", "<C-\\><C-n><C-w>k", opts("Window up"))
-    vim.keymap.set("t", "<C-l>", "<C-\\><C-n><C-w>l", opts("Window right"))
   end,
 })

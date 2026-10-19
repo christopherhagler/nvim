@@ -60,6 +60,14 @@ end, { desc = "Toggle quickfix window" })
 
 -- Show diagnostics for the current line
 map("n", "<leader>e", vim.diagnostic.open_float, { desc = "Line diagnostics" })
+-- Errors only: clang-tidy warnings bury the real errors under ]d / [d. Global,
+-- not LSP-scoped, since linters report diagnostics too.
+map("n", "]e", function()
+  vim.diagnostic.jump({ count = 1, severity = vim.diagnostic.severity.ERROR, float = true })
+end, { desc = "Next error" })
+map("n", "[e", function()
+  vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.ERROR, float = true })
+end, { desc = "Prev error" })
 
 -- Build / run. Detection and the quickfix plumbing live in lua/config/build.lua;
 -- a project overrides either command from its .nvim.lua (see 'exrc').

@@ -40,6 +40,8 @@ return {
           map("n", "[c", function()
             if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else gs.nav_hunk("prev") end
           end, "Prev hunk")
+          -- Hunk text object: dih, yih, vih
+          map({ "o", "x" }, "ih", gs.select_hunk, "Inside hunk")
 
           -- Stage / reset. stage_hunk toggles: run it on a staged hunk to
           -- unstage it (gitsigns deprecated undo_stage_hunk in favour of this),

@@ -42,6 +42,7 @@ The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leade
 | `<leader>rn` / `<leader>a` | Rename symbol / code actions |
 | `<leader>lf` | Format buffer or selection |
 | `[d` / `]d` / `<leader>e` | Previous / next diagnostic / show message |
+| `[e` / `]e` | Previous / next error (skips warnings) |
 | `<leader>xx` | Open project diagnostics |
 | `[q` / `]q` / `<leader>xc` | Previous / next quickfix item / toggle list |
 | `<leader>gs` / `<leader>gd` | Git status / diff |
@@ -49,7 +50,7 @@ The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leade
 | `<leader>hs` | Stage or unstage hunk |
 | `<C-\>` / `<leader>tt` | Toggle terminal (from terminal mode, `<Esc><Esc>` first) |
 | `<Esc><Esc>` | Leave terminal mode (in Claude's terminal, `<C-\><C-n>`) |
-| `<C-h/j/k/l>` | Move between windows |
+| `<C-h/j/k/l>` | Move between windows (in a terminal, `<C-h>` / `<C-j>` only; `<C-k>` / `<C-l>` stay with the shell) |
 | `<leader>w` / `jk` | Save / leave insert mode |
 
 Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `<CR>` accepts a selected item. Nothing is preselected. `<Esc>` dismisses the menu; `jk` leaves insert mode.
@@ -97,7 +98,8 @@ Start debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/
 | `<F9>` / `<leader>db` | Toggle breakpoint |
 | `<F10>` / `<leader>dn` | Step over |
 | `<F11>` / `<leader>di` | Step into |
-| `<S-F11>` / `<leader>do` | Step out |
+| `<S-F11>` / `<F12>` / `<leader>do` | Step out |
+| `<leader>dk` / `<leader>dj` / `<leader>dh` | Stack frame up / down / hover value |
 | `<S-F5>` / `<leader>dt` | Terminate |
 | `<leader>dB` / `<leader>dx` | Conditional breakpoint / clear all breakpoints |
 | `<leader>dC` / `<leader>dp` | Run to cursor / pause |
@@ -105,6 +107,7 @@ Start debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/
 | `<leader>tr` / `<leader>tf` / `<leader>ta` | Run nearest test / file / project |
 | `<leader>td` / `<leader>tl` | Debug nearest test / rerun last test |
 | `<leader>ts` / `<leader>to` | Test summary / test output |
+| `]x` / `[x` | Next / previous failed test |
 
 Debugging supports C/C++, CUDA, Python, MATLAB, JS/TS, and Bash. C/C++ uses LLDB on macOS and gdb on Linux. Leader mappings also work when your terminal captures function keys.
 
