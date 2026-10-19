@@ -66,12 +66,9 @@ map("n", "<leader>e", vim.diagnostic.open_float, { desc = "Line diagnostics" })
 map("n", "<leader>bb", function() require("config.build").build() end, { desc = "Build project" })
 map("n", "<leader>br", function() require("config.build").run() end,   { desc = "Run current file" })
 map("n", "<leader>bk", function() require("config.build").stop() end,  { desc = "Stop build" })
-map("n", "<leader>bc", function()
-  vim.ui.input({ prompt = "Build command: ", default = select(1, require("config.build").build_cmd()) },
-    function(cmd)
-      if cmd and cmd ~= "" then require("config.build").build(cmd) end
-    end)
-end, { desc = "Build with a custom command" })
+-- Pick or edit this project's build command (make image, ./build.sh, …);
+-- remembered per project as what <leader>bb runs
+map("n", "<leader>bc", function() require("config.build").choose() end, { desc = "Choose build command" })
 
 -- Build, then start debugging — the one keypress an IDE's "Debug" button is.
 -- Debugging a binary you forgot to rebuild is the classic way to spend ten
@@ -88,17 +85,17 @@ map("n", "<leader>bd", function()
   end
 end, { desc = "Build (if needed), then debug" })
 
--- CMake configuration (lua/config/cmake.lua). Remembered per project, so this
--- is a rare trip rather than something to set on every session.
+-- Target (CMake or Make) and CMake configuration. Remembered per project, so
+-- this is a rare trip rather than something to set on every session.
 map("n", "<leader>bt", function() require("config.cmake").select_build_type() end,
   { desc = "CMake: build type" })
-map("n", "<leader>bT", function() require("config.cmake").select_target() end,
-  { desc = "CMake: target" })
+map("n", "<leader>bT", function() require("config.build").select_target() end,
+  { desc = "Build target (CMake / Make)" })
 map("n", "<leader>bp", function() require("config.cmake").select_preset() end,
   { desc = "CMake: preset" })
 map("n", "<leader>bi", function()
-  vim.notify(require("config.cmake").status(), vim.log.levels.INFO, { title = "CMake" })
-end, { desc = "CMake: status (what <leader>bb would do)" })
+  vim.notify(require("config.build").status(), vim.log.levels.INFO, { title = "Build" })
+end, { desc = "Build info (what <leader>bb runs)" })
 
 -- Format (global, not LSP-scoped: conform handles filetypes such as yaml and
 -- scss that have no language server attached). In visual mode conform detects

@@ -173,6 +173,93 @@ local function test()
   session.eval = eval
   vim.cmd.close()
 
+  -- Recursive Make: a subdirectory's own Makefile does not make it the project.
+  local mk = fixture .. "/make tree"
+  write(mk .. "/.git/HEAD")
+  write(mk .. "/Makefile")
+  write(mk .. "/drivers/Makefile")
+  write(mk .. "/drivers/foo.c")
+  equal(project.root(mk .. "/drivers/foo.c"), mk)
+
+  -- Build output is typed: errors and warnings counted apart, notes neither.
+  edit(a .. "/src/main.c")
+  local built = false
+  build.build("printf '%s\\n' 'main.c:1:1: error: bad' 'main.c:2:1: warning: meh' 'main.c:3:1: note: here'"
+    .. " 'collect2: error: ld returned 1 exit status'; exit 2")
+  assert(vim.wait(5000, function() return messages[#messages]:find("Build failed", 1, true) ~= nil end))
+  assert(messages[#messages]:find("1 error(s), 1 warning(s)", 1, true), messages[#messages])
+  local types = vim.tbl_map(function(i) return i.type end,
+    vim.tbl_filter(function(i) return i.valid == 1 end, vim.fn.getqflist()))
+  equal(types, { "e", "w", "" })
+  -- The failure opened quickfix (the unparsed linker line is in it as text);
+  -- the next successful build closes that window, and only that one.
+  local function qf_open()
+    return vim.iter(vim.fn.getwininfo()):any(function(w) return w.quickfix == 1 end)
+  end
+  assert(qf_open())
+  build.build("true", function() built = true end)
+  assert(vim.wait(5000, function() return built end))
+  assert(not qf_open())
+  vim.fn.setqflist({}, " ", { title = "grep results", lines = { "x" } })
+  vim.cmd("copen")
+  built = false
+  build.build("true", function() built = true end)
+  assert(vim.wait(5000, function() return built end))
+  assert(qf_open(), "a quickfix window the user opened was closed by a build")
+  vim.cmd("cclose")
+
+  -- Commands built in a project are kept, most recent first.
+  equal(build.history(a)[1], "true")
+  assert(vim.tbl_contains(build.history(a), "printf %s " .. vim.fn.shellescape(output)))
+
+  -- A remembered command beats .nvim.lua's build_cmd, and resetting restores it.
+  edit(b .. "/main.py")
+  build.remember("make image", b)
+  equal({ build.build_cmd() }, { "make image", "remembered" })
+  build.remember(nil, b)
+  equal(build.build_cmd(), "scoped-b")
+
+  -- :Build appends like :make; the same program, or a bang, replaces.
+  local ran = {}
+  local real_build = build.build
+  build.build = function(cmd) ran[#ran + 1] = cmd end
+  build.remember("gmake -j4 ARCH=arm64", b)
+  build.build_args("image", false)
+  build.build_args("gmake clean", false)
+  build.build_args("./release.sh", true)
+  build.remember("'cmake' '-S' . && 'cmake' '--build' 'out'", b)
+  build.build_args("cmake --build out --target tool", false)
+  build.remember(nil, b)
+  build.build = real_build
+  equal(ran, {
+    "gmake -j4 ARCH=arm64 image",
+    "gmake clean",
+    "./release.sh",
+    "'cmake' '-S' . && cmake --build out --target tool",
+  })
+
+  -- Make's database dump: real targets only.
+  equal(require("config.make")._parse(table.concat({
+    "# Files", "", "# Not a target:", "foo.c:", "", "all: build", "", "image: build", "",
+    "obj/%.o: src/%.c", "", ".PHONY: all", "", "Makefile:", "", "extra.mk:", "", "CC := gcc", "",
+    "# Finished Make data base",
+  }, "\n")), { "all", "image" })
+
+  -- CMake: a build directory configured by hand keeps its build type until one
+  -- is chosen with <leader>bt.
+  local cm = fixture .. "/cmake tree"
+  write(cm .. "/.git/HEAD")
+  write(cm .. "/CMakeLists.txt")
+  write(cm .. "/build/CMakeCache.txt", { "CMAKE_BUILD_TYPE:STRING=Release" })
+  local cmake = require("config.cmake")
+  equal({ cmake.build_type(cm) }, { "Release", false })
+  local function passes_type(argv)
+    return vim.iter(argv):any(function(arg) return arg:find("^%-DCMAKE_BUILD_TYPE=") ~= nil end)
+  end
+  assert(not passes_type(cmake.configure_argv(cm)))
+  cmake.set("build_type", "Debug", cm)
+  assert(vim.tbl_contains(cmake.configure_argv(cm), "-DCMAKE_BUILD_TYPE=Debug"))
+
   -- A CMake build that creates the first compile database restarts clangd
   -- (it never rescans for one) and links it into the root; later builds,
   -- whose database clangd already watches, leave it running.

@@ -48,6 +48,7 @@ M.MARKERS = {
   "CMakeLists.txt",
   "Makefile",
   "makefile",
+  "GNUmakefile",
   "package.json",
   "Cargo.toml",
   "pyproject.toml",
@@ -55,22 +56,29 @@ M.MARKERS = {
   ".git",
 }
 
-local function has_cmakelists(dir)
-  return vim.uv.fs_stat(dir .. "/CMakeLists.txt") ~= nil
+local function has(dir, names)
+  for _, name in ipairs(names) do
+    if vim.uv.fs_stat(dir .. "/" .. name) then return true end
+  end
+  return false
 end
 
--- "Nearest marker" is the wrong answer for CMake: every add_subdirectory()
--- folder has a CMakeLists.txt of its own, so editing src/a.cpp would make src/
--- the project and <leader>bb would configure a subdirectory as if it were the
--- whole tree. The real project is the topmost CMakeLists.txt inside the
--- repository. Outside a repository there is no boundary to stop at, so only an
--- unbroken chain of CMakeLists.txt directories is climbed.
-local function cmake_top(dir)
+local CMAKE = { "CMakeLists.txt" }
+local MAKE = { "Makefile", "makefile", "GNUmakefile" }
+
+-- "Nearest marker" is the wrong answer for CMake and for recursive Make: every
+-- add_subdirectory() folder has a CMakeLists.txt of its own, and every
+-- subdirectory of a kernel, U-Boot or Buildroot tree its own Makefile, so
+-- editing drivers/foo.c would make drivers/ the project and <leader>bb would
+-- build a fragment as if it were the whole tree. The real project is the
+-- topmost such file inside the repository. Outside a repository there is no
+-- boundary to stop at, so only an unbroken chain of them is climbed.
+local function topmost(dir, names)
   local top = dir
   local stop = vim.fs.root(dir, ".git")
   if stop == dir then return dir end
   for parent in vim.fs.parents(dir) do
-    if has_cmakelists(parent) then
+    if has(parent, names) then
       top = parent
     elseif not stop then
       break
@@ -85,7 +93,8 @@ end
 function M.root(source)
   local root = vim.fs.root(source or 0, M.MARKERS)
   if not root then return vim.uv.cwd() end
-  if has_cmakelists(root) then return cmake_top(root) end
+  if has(root, CMAKE) then return topmost(root, CMAKE) end
+  if has(root, MAKE) then return topmost(root, MAKE) end
   return root
 end
 

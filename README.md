@@ -61,21 +61,27 @@ Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `
 | `<leader>bb` | Build project |
 | `<leader>br` | Run current file |
 | `<leader>bd` | Build, then debug on success |
-| `<leader>bc` | Enter a custom build command |
+| `<leader>bc` | Choose this project's build command (remembered) |
+| `<leader>bT` | Choose the target to build (CMake or Make) |
+| `<leader>bi` | Show exactly what `<leader>bb` runs, and why |
 | `<leader>bk` | Stop build |
 
-Builds detect CMake, Make, Cargo, or an npm build script from the current file's project. Standalone C/C++ files compile with debug symbols. Builds run asynchronously and send errors to quickfix; use `[q` / `]q` to navigate them. Runs use a terminal split.
+`<leader>bb` runs, in order: the command remembered for this project, a `build_cmd` from its [`.nvim.lua`](#project-configuration), or what its files indicate: CMake, Make, Cargo, or an npm build script. Standalone C/C++ files compile with debug symbols. Builds run asynchronously and send errors and warnings to quickfix; use `[q` / `]q` to navigate them. Runs use a terminal split.
 
-Command equivalents: `:Build [command]`, `:Run`, and `:BuildStop`. Set persistent build/run commands in [project configuration](#project-configuration).
+Projects build differently, so `<leader>bc` lists the commands built in this project before, or lets you edit one (`make image ARCH=arm64`, `./build.sh release`, …). The one you pick is built and becomes this project's `<leader>bb`; choose **Reset to auto-detect** to undo. `<leader>bT` in a Make project lists the Makefile's targets, including those from included makefiles and those that depend on variables in the current command, and remembers the pick the same way.
 
-For CMake, Debug is the default. Choose a build type with `<leader>bt`, target with `<leader>bT`, or configure preset with `<leader>bp`. Presets control their own configuration. Choices persist per project; `<leader>bi` shows the active settings.
+`:Build image` appends to the project's command, like `:make image`, and completes Make targets with `<Tab>`. `:Build make clean` (same program) or `:Build! ./other.sh` runs a different command once. `:Run` and `:BuildStop` match `<leader>br` and `<leader>bk`.
+
+Make runs in parallel (`-j` with all cores) unless `MAKEFLAGS` sets the jobs, with `--output-sync` so recursive output stays in order. On macOS install GNU make 4+ (`brew install make`, used as `gmake`); `/usr/bin/make` 3.81 lacks output sync. For a Makefile that is not parallel-safe, remember plain `make` with `<leader>bc`. The project root is the topmost Makefile in the repository, so building from `drivers/foo.c` in a kernel-style tree builds the whole tree.
+
+For CMake, choose a build type with `<leader>bt`, target with `<leader>bT`, or configure preset with `<leader>bp`. Until you choose a build type, a build directory you configured yourself keeps its own, and a new one uses Debug. Presets control their own configuration. Choices persist per project.
 
 ### C/C++ and CUDA
 
 clangd needs each project's include paths and compiler flags. For CMake, `<leader>bb` sets this up: the first build links `compile_commands.json` to the project root and restarts clangd, so go-to-definition and diagnostics work from then on. To set it up without building, or for other build systems, run `:CompileCommands` (or `<leader>lg`):
 
 - **CMake:** configure the project and link its `compile_commands.json` to the project root.
-- **Make:** run a full rebuild through `bear` to record compiler commands.
+- **Make:** run a full rebuild of the project's own build command (target and variables included) through `bear` to record compiler commands.
 - **Other projects:** generate a fallback `.clangd` file.
 
 Use `<leader>lh` to switch between source and header. Project `.clang-format` files override the default C/C++ style (K&R braces, four spaces, 120 columns).

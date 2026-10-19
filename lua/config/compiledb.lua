@@ -204,7 +204,7 @@ function M.generate()
     return
   end
 
-  if vim.uv.fs_stat(root .. "/Makefile") or vim.uv.fs_stat(root .. "/makefile") then
+  if require("config.make").is_make(root) then
     if vim.fn.executable("bear") == 0 then
       notify("make project needs `bear` to record compile flags — install bear, or use :CompileCommands! for a .clangd fallback",
         vim.log.levels.ERROR)
@@ -212,14 +212,22 @@ function M.generate()
     end
     -- bear observes an actual build, so it only sees the files that actually
     -- get compiled. -B forces every target to rebuild; without it an
-    -- already-built tree produces an almost-empty compile_commands.json.
+    -- already-built tree produces an almost-empty compile_commands.json. The
+    -- build is the project's own make command (target, ARCH=…, CROSS_COMPILE=…
+    -- included, and parallel): a bare `make` would record host flags for a
+    -- cross build.
     --
     -- bear 3 separates its own arguments from the build command with `--`;
     -- bear 2, which is what older EPEL 8 repos carry, has no such separator and
     -- fails outright on it. Ask which one is installed rather than guessing.
-    local version = vim.system({ "bear", "--version" }, { text = true }):wait()
+    local version = vim.system({ "bear", "--version" }, { text = true }):wait(2000)
     local major = tonumber(((version.stdout or "") .. (version.stderr or "")):match("(%d+)%.")) or 3
-    local cmd = major >= 3 and { "bear", "--", "make", "-B" } or { "bear", "make", "-B" }
+    local make_cmd = require("config.build").build_cmd()
+    if not (make_cmd and vim.fs.basename(make_cmd:match("^%S+") or ""):match("make$")) then
+      make_cmd = require("config.make").command()
+    end
+    local build = { "sh", "-c", make_cmd .. " -B" }
+    local cmd = vim.list_extend(major >= 3 and { "bear", "--" } or { "bear" }, build)
 
     run(cmd, root, function()
       ensure_cuda_clangd(root)

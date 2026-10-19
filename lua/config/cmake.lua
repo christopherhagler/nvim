@@ -60,7 +60,8 @@ function M.profile(root)
   root = root or require("config.project").root()
   local all = load()
   if not all[root] then
-    all[root] = { build_type = "Debug" } -- Debug: see the header comment
+    -- No build_type until one is chosen: see M.build_type
+    all[root] = {}
   end
   return all[root], root
 end
@@ -189,6 +190,31 @@ local function is_multi_config(build_dir)
   return multi
 end
 
+local function cached_build_type(build_dir)
+  local f = io.open(build_dir .. "/CMakeCache.txt", "r")
+  if not f then return nil end
+  local value
+  for line in f:lines() do
+    value = line:match("^CMAKE_BUILD_TYPE:[^=]*=(.*)$")
+    if value then break end
+  end
+  f:close()
+  return value ~= "" and value or nil
+end
+
+--- The build type <leader>bb builds, and whether it was chosen here.
+--- A type picked with <leader>bt wins. Otherwise a build directory you
+--- configured yourself keeps its own (forcing Debug over a hand-made Release
+--- tree would reconfigure and rebuild all of it), and only a fresh or untyped
+--- one gets Debug — see the header comment for why Debug.
+--- @return string build_type, boolean explicit
+function M.build_type(root)
+  local profile, r = M.profile(root)
+  if profile.build_type then return profile.build_type, true end
+  local build = M.binary_dir(r)
+  return (not is_multi_config(build) and cached_build_type(build)) or "Debug", false
+end
+
 -- CMake only writes its machine-readable project description when a query file
 -- exists *before* the configure step, so this has to run on the way in.
 local function request_file_api(build_dir)
@@ -269,8 +295,11 @@ function M.configure_argv(root)
     vim.list_extend(argv, { "--preset", profile.preset })
   else
     vim.list_extend(argv, { "-S", r, "-B", build })
-    if not is_multi_config(build) then
-      table.insert(argv, "-DCMAKE_BUILD_TYPE=" .. profile.build_type)
+    local build_type, explicit = M.build_type(r)
+    -- Passed when chosen, or when the cache has none; a cache's own type is
+    -- left alone
+    if not is_multi_config(build) and (explicit or not cached_build_type(build)) then
+      table.insert(argv, "-DCMAKE_BUILD_TYPE=" .. build_type)
     end
   end
   table.insert(argv, "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
@@ -287,7 +316,7 @@ function M.build_argv(root)
   local build = M.binary_dir(r)
   local argv = { "cmake", "--build", build }
   if is_multi_config(build) then
-    vim.list_extend(argv, { "--config", profile.build_type })
+    vim.list_extend(argv, { "--config", (M.build_type(r)) })
   end
   if profile.target then
     vim.list_extend(argv, { "--target", profile.target })
@@ -307,7 +336,7 @@ end
 function M.build_cmd(root)
   local configure, r = M.configure_argv(root)
   local profile = M.profile(r)
-  local label = "cmake " .. (profile.preset and ("preset " .. profile.preset) or profile.build_type)
+  local label = "cmake " .. (profile.preset and ("preset " .. profile.preset) or M.build_type(r))
   if profile.target then label = label .. " → " .. profile.target end
   return shell(configure) .. " && " .. shell(M.build_argv(r)), label
 end
@@ -342,7 +371,7 @@ function M.targets(root)
   -- A multi-config build directory describes every configuration at once.
   local configuration = codemodel.configurations[1]
   for _, candidate in ipairs(codemodel.configurations) do
-    if candidate.name == profile.build_type then
+    if candidate.name == M.build_type(r) then
       configuration = candidate
       break
     end
@@ -450,7 +479,8 @@ function M.status(root)
   if profile.preset then
     table.insert(parts, "preset " .. profile.preset)
   else
-    table.insert(parts, profile.build_type)
+    local build_type, explicit = M.build_type(r)
+    table.insert(parts, build_type .. (explicit and "" or " (from the build directory, or default)"))
   end
   table.insert(parts, profile.target and ("target " .. profile.target) or "all targets")
   table.insert(parts, "build dir " .. M.binary_dir(r))

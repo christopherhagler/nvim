@@ -4,9 +4,15 @@
 local command = vim.api.nvim_create_user_command
 
 -- ── Build / run ───────────────────────────────────────────────────────────────
+-- :Build image appends to the project's command, like :make; :Build! cmd
+-- replaces it (lua/config/build.lua, build_args)
 command("Build", function(opts)
-  require("config.build").build(opts.args ~= "" and opts.args or nil)
-end, { nargs = "*", desc = "Build the project (bare :Build auto-detects)", complete = "shellcmd" })
+  require("config.build").build_args(opts.args, opts.bang)
+end, {
+  nargs = "*", bang = true,
+  complete = function(arglead) return require("config.build").complete(arglead) end,
+  desc = "Build the project (args append to its command; ! replaces it)",
+})
 
 command("BuildStop", function()
   require("config.build").stop()

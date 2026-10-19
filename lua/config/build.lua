@@ -21,10 +21,9 @@
 
 local M = {}
 
--- Parsers for build output. Vim's default 'errorformat' already understands
--- gcc/clang (file:line:col: error: msg), so C, C++ and anything driven by
--- make/cmake fall through to it; only the languages whose runtimes report
--- errors in their own shape need an entry.
+-- Parsers for build output. C, C++ and anything driven by make/cmake use the
+-- gcc format below; only the languages whose runtimes report errors in their
+-- own shape need an entry here.
 local ERRORFORMAT = {
   -- Python tracebacks: the location line comes before the message line, so the
   -- multiline %A/%C/%Z form is required (this is $VIMRUNTIME/compiler/pyunit).
@@ -50,6 +49,40 @@ local NVCC_EFM = table.concat({
   "%f(%l): %trror: %m",
   "%f(%l): %tarning%*[^:]: %m",
   "%f(%l): catastrophic %trror: %m",
+}, ",")
+
+-- gcc/clang/make, from $VIMRUNTIME/compiler/gcc.vim. Vim's default
+-- 'errorformat' finds the same locations but records no type, so every entry
+-- was neither error nor warning and `note:` lines were counted as warnings.
+-- Without gcc.vim's final catch-all (%-G%.%#): lines that match nothing stay in
+-- the list as plain text, so a link error or a make failure with no file:line
+-- is still readable in quickfix instead of vanishing.
+local GCC_EFM = table.concat({
+  -- make's own failure line, as make, gmake or a sub-make (make[1]); gcc.vim
+  -- matches only plain `make:`, so the others became a bogus file named
+  -- "gmake[1]: *** [Makefile"
+  [[%*\a[%*\d]: *** [%f:%l: %m]],
+  [[%*\a: *** [%f:%l: %m]],
+  [[%*[^"]"%f"%*\D%l:%c: %m]],
+  [[%*[^"]"%f"%*\D%l: %m]],
+  [["%f"%*\D%l:%c: %m]],
+  [["%f"%*\D%l: %m]],
+  [[%-G%f:%l: %trror: (Each undeclared identifier is reported only once]],
+  [[%-G%f:%l: %trror: for each function it appears in.)]],
+  [[%f:%l:%c: fatal %trror: %m]],
+  [[%f:%l:%c: %trror: %m]],
+  [[%f:%l:%c: %tarning: %m]],
+  [[%f:%l:%c: %m]],
+  [[%f:%l: %trror: %m]],
+  [[%f:%l: %tarning: %m]],
+  [[%f:%l: %m]],
+  [[%f:\(%*[^\)]\): %m]],
+  [["%f"\, line %l%*\D%c%*[^ ] %m]],
+  [[%D%*\a[%*\d]: Entering directory %*[`']%f']],
+  [[%X%*\a[%*\d]: Leaving directory %*[`']%f']],
+  [[%D%*\a: Entering directory %*[`']%f']],
+  [[%X%*\a: Leaving directory %*[`']%f']],
+  [[%DMaking %*\a in %f]],
 }, ",")
 
 -- Kept as an alias so callers inside this file read naturally; the definition
@@ -150,13 +183,65 @@ local function single_file_build()
   )
 end
 
---- The command `build()` would run, and why. Detection order matters: a C++
---- project with both CMakeLists.txt and a wrapper Makefile wants cmake.
---- @return string|nil cmd, string label
-function M.build_cmd()
-  local override = require("config.project").get("build_cmd")
-  if override then return override, "project build_cmd" end
+-- ── Remembered commands ──────────────────────────────────────────────────────
+-- Projects are not all built the same way: `make image ARCH=arm64` in one,
+-- `./build.sh release` in another, the wrapper Makefile rather than the
+-- CMakeLists.txt beside it in a third. The command picked with <leader>bc (or
+-- <leader>bT) is remembered per project root, with a short history of what was
+-- built there, next to the CMake profiles in stdpath("state").
 
+local STATE = vim.fn.stdpath("state") .. "/build-commands.json"
+local HISTORY = 10
+local state = nil
+
+local function load_state()
+  if state then return state end
+  local ok, data = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(STATE), "\n")) end)
+  state = ok and type(data) == "table" and data or {}
+  return state
+end
+
+local function save_state()
+  vim.fn.mkdir(vim.fs.dirname(STATE), "p")
+  pcall(vim.fn.writefile, { vim.json.encode(state or {}) }, STATE)
+end
+
+local function entry(root)
+  local all = load_state()
+  all[root] = all[root] or {}
+  all[root].history = all[root].history or {}
+  return all[root]
+end
+
+--- The command remembered for a project, or nil.
+function M.remembered(root)
+  return (load_state()[root or M.root()] or {}).cmd
+end
+
+--- Remember `cmd` as the project's <leader>bb (nil forgets it).
+function M.remember(cmd, root)
+  entry(root or M.root()).cmd = cmd
+  save_state()
+end
+
+--- Commands built in this project, most recent first.
+function M.history(root)
+  return vim.deepcopy(entry(root or M.root()).history)
+end
+
+local function record(cmd, root)
+  local e = entry(root)
+  local history = { cmd }
+  for _, old in ipairs(e.history) do
+    if old ~= cmd and #history < HISTORY then table.insert(history, old) end
+  end
+  e.history = history
+  save_state()
+end
+
+--- What the project's build files say to run.
+--- @return string|nil cmd, string label
+function M.detected_cmd()
   local root = M.root()
   if exists(root, "CMakeLists.txt") then
     -- Configure every time: it is a no-op once the cache exists, and it means
@@ -166,8 +251,8 @@ function M.build_cmd()
     -- clangd — and which passes CMAKE_BUILD_TYPE, without which the build
     -- carries no -g and every breakpoint silently fails to bind.
     return require("config.cmake").build_cmd(root)
-  elseif exists(root, "Makefile") or exists(root, "makefile") then
-    return "make", "make"
+  elseif require("config.make").is_make(root) then
+    return require("config.make").command(), "make"
   elseif exists(root, "Cargo.toml") then
     return "cargo build", "cargo"
   elseif exists(root, "package.json") and M.has_build() then
@@ -177,6 +262,19 @@ function M.build_cmd()
   local single = single_file_build()
   if single then return single, "single file" end
   return nil, "none"
+end
+
+--- The command `build()` would run, and why: the command remembered with
+--- <leader>bc, else the project's .nvim.lua build_cmd, else detection. Detection
+--- order matters: a C++ project with both CMakeLists.txt and a wrapper Makefile
+--- wants cmake — remember the Makefile's command where it is the real entry.
+--- @return string|nil cmd, string label
+function M.build_cmd()
+  local remembered = M.remembered()
+  if remembered then return remembered, "remembered" end
+  local override = require("config.project").get("build_cmd")
+  if override then return override, "project build_cmd" end
+  return M.detected_cmd()
 end
 
 -- A failed write must never launch code from an older version on disk.
@@ -198,14 +296,19 @@ local function save(command)
 end
 
 local job = nil
+local qf_win = nil -- the quickfix window a failed build opened, if any
+
+local function qf_window_open()
+  return vim.iter(vim.fn.getwininfo()):any(function(w) return w.quickfix == 1 and w.loclist == 0 end)
+end
 
 --- Whether build() would find something to build for the current buffer, used
 --- by <leader>bd: an interpreted file has no build step, and debugging it
 --- should not wait on one.
 function M.has_build()
-  if require("config.project").get("build_cmd") then return true end
+  if M.remembered() or require("config.project").get("build_cmd") then return true end
   local root = M.root()
-  for _, name in ipairs({ "CMakeLists.txt", "Makefile", "makefile", "Cargo.toml" }) do
+  for _, name in ipairs({ "CMakeLists.txt", "Makefile", "makefile", "GNUmakefile", "Cargo.toml" }) do
     if exists(root, name) then return true end
   end
   if exists(root, "package.json") then
@@ -239,11 +342,16 @@ function M.build(cmd, on_success)
   -- A language's own errorformat applies only when the build *is* that
   -- language's file. A project build (cmake, make, a custom command) prints
   -- compiler output whichever buffer it was started from — reading gcc errors
-  -- with the shell format from a .sh buffer gave an empty quickfix list.
+  -- with the shell format from a .sh buffer gave an empty quickfix list. A
+  -- buffer-local format (`:compiler` for an unusual toolchain) is honoured.
+  local local_efm = vim.api.nvim_get_option_value("errorformat", { scope = "local" })
   local efm = (label == "single file" and ERRORFORMAT[vim.bo.filetype])
-    or (NVCC_EFM .. "," .. vim.o.errorformat)
+    or (local_efm ~= "" and local_efm)
+    or (NVCC_EFM .. "," .. GCC_EFM)
   if not save("wall") then return end
   vim.notify(("Building (%s): %s"):format(label, cmd), vim.log.levels.INFO)
+  -- History is per project; a scratch file's compile line is not a project's
+  if label ~= "single file" then record(cmd, root) end
   -- A CMake build also (re)writes compile_commands.json; see after_cmake_build
   local cmake_build = label:match("^cmake") ~= nil
   local had_db = cmake_build and require("config.compiledb").cmake_db_exists(root)
@@ -263,22 +371,34 @@ function M.build(cmd, on_success)
     table.remove(parsed, 1) -- synthetic directory line
     vim.fn.setqflist({}, " ", { title = cmd, items = parsed })
 
-    local items = vim.fn.getqflist()
-    local valid = #vim.tbl_filter(function(i) return i.valid == 1 end, items)
+    local errors, warnings = 0, 0
+    for _, item in ipairs(vim.fn.getqflist()) do
+      if item.valid == 1 then
+        local t = item.type:lower()
+        if t == "e" then errors = errors + 1 elseif t == "w" then warnings = warnings + 1 end
+      end
+    end
     -- Whatever the exit code: a compile error after a successful configure
     -- still leaves a fresh database, and that is when clangd's view matters
     if cmake_build then require("config.compiledb").after_cmake_build(root, had_db) end
 
     if res.code == 0 then
-      vim.cmd("cclose")
-      vim.notify(valid > 0 and ("Build OK, " .. valid .. " warning(s)") or "Build OK", vim.log.levels.INFO)
+      -- Only a window a failed build opened: one you opened yourself (grep
+      -- results, say) stays, and the older list is a :colder away
+      if qf_win and vim.api.nvim_win_is_valid(qf_win) then vim.api.nvim_win_close(qf_win, false) end
+      qf_win = nil
+      vim.notify(warnings > 0 and ("Build OK, " .. warnings .. " warning(s)") or "Build OK", vim.log.levels.INFO)
       if on_success then on_success() end
     else
-      if valid > 0 then
+      -- Opened even with nothing parsed: a link error or a make failure with no
+      -- file:line is still there as text, and is the only clue
+      if #parsed > 0 and not qf_window_open() then
         vim.cmd("botright copen")
+        qf_win = vim.api.nvim_get_current_win()
         vim.cmd("wincmd p") -- copen steals focus; the cursor belongs in the code
       end
-      vim.notify(("Build failed (exit %d), %d diagnostic(s)"):format(res.code, valid), vim.log.levels.ERROR)
+      vim.notify(("Build failed (exit %d): %d error(s), %d warning(s)"):format(res.code, errors, warnings),
+        vim.log.levels.ERROR)
     end
   end))
 end
@@ -294,6 +414,124 @@ function M.stop()
   -- running".
   if not vim.uv.kill(-job.pid, "sigterm") then job:kill("sigterm") end
   vim.notify("Build stopped", vim.log.levels.WARN)
+end
+
+-- ── Choosing the command ─────────────────────────────────────────────────────
+
+local EDIT = "Edit…"
+local RESET = "Reset to auto-detect"
+
+--- <leader>bc: pick a command built here before, or edit one; whatever you pick
+--- is built now and remembered as this project's <leader>bb.
+function M.choose()
+  local root = M.root()
+  local current = M.build_cmd()
+  local items = M.history(root)
+  table.insert(items, EDIT)
+  if M.remembered(root) then table.insert(items, RESET) end
+
+  local function use(cmd)
+    if not cmd or vim.trim(cmd) == "" then return end
+    M.remember(vim.trim(cmd), root)
+    M.build()
+  end
+
+  vim.ui.select(items, {
+    prompt = "Build command for " .. vim.fn.fnamemodify(root, ":~") .. ":",
+    format_item = function(item)
+      return item == current and (item .. "  (current)") or item
+    end,
+  }, function(choice)
+    if choice == EDIT then
+      vim.ui.input({ prompt = "Build command: ", default = current, completion = "shellcmd" }, use)
+    elseif choice == RESET then
+      M.remember(nil, root)
+      vim.notify("Build command: auto-detect (" .. (M.build_cmd() or "nothing found") .. ")")
+    elseif choice then
+      use(choice)
+    end
+  end)
+end
+
+--- :Build. Arguments are appended to the project's command, as :make appends
+--- to 'makeprg': `:Build image` runs `make -j8 … image`. Arguments that start
+--- with the same program (`:Build make image`) replace it instead, and
+--- `:Build! cmd` always replaces. Neither is remembered; <leader>bc does that.
+function M.build_args(args, bang)
+  if args == "" then return M.build() end
+  if bang then return M.build(args) end
+  local base = M.build_cmd()
+  if not base then return M.build(args) end
+  local function program(cmd)
+    return vim.fs.basename((cmd:match("^%s*(%S+)") or ""):gsub("['\"]", ""))
+  end
+  -- The last step of a chained command (cmake configure && cmake --build) is
+  -- the one arguments belong to
+  local last = base:match(".*&&%s*(.*)$") or base
+  if program(args) == program(last) then
+    return M.build((base:sub(1, #base - #last)) .. args)
+  end
+  M.build(base .. " " .. args)
+end
+
+--- Completion for :Build: the Makefile's targets in a Make project (from the
+--- same listing <leader>bT uses), files otherwise.
+function M.complete(arglead)
+  local root = M.root()
+  local make = require("config.make")
+  if make.is_make(root) and not exists(root, "CMakeLists.txt") then
+    local targets = make.targets_sync(root, make.variables(M.build_cmd()))
+    return vim.tbl_filter(function(t) return vim.startswith(t, arglead) end, targets)
+  end
+  return vim.fn.getcompletion(arglead, "file")
+end
+
+--- <leader>bT: the target to build. CMake projects pick from CMake's own
+--- target list; Make projects from the Makefile's, remembered as the command
+--- `make -jN … <target>` (keeping any VAR=value from the current command).
+function M.select_target()
+  local root = M.root()
+  if exists(root, "CMakeLists.txt") then return require("config.cmake").select_target() end
+  local make = require("config.make")
+  if not make.is_make(root) then
+    vim.notify("No CMakeLists.txt or Makefile in " .. root, vim.log.levels.WARN)
+    return
+  end
+  local vars = make.variables(M.build_cmd())
+  vim.notify("Listing make targets…", vim.log.levels.INFO)
+  make.targets(root, vars, function(targets, err)
+    if not targets then
+      vim.notify("Could not list make targets: " .. (err ~= "" and err or "empty database"), vim.log.levels.ERROR)
+      return
+    end
+    local DEFAULT = "<default goal>"
+    vim.ui.select(vim.list_extend({ DEFAULT }, targets), { prompt = "Make target to build:" }, function(choice)
+      if not choice then return end
+      local cmd = table.concat(vim.list_extend({ make.command() }, vars), " ")
+      if choice ~= DEFAULT then cmd = cmd .. " " .. choice end
+      M.remember(cmd, root)
+      vim.notify("Build command: " .. cmd)
+    end)
+  end)
+end
+
+--- <leader>bi: exactly what <leader>bb will run, and where that came from.
+function M.status()
+  local root = M.root()
+  local cmd, label = M.build_cmd()
+  local source = ({
+    remembered = "remembered (<leader>bc to change or reset)",
+    ["project build_cmd"] = "build_cmd in the project's .nvim.lua",
+  })[label] or ("detected: " .. label)
+  local lines = {
+    "Project: " .. vim.fn.fnamemodify(root, ":~"),
+    "Command: " .. (cmd or "none"),
+    "Source:  " .. source,
+  }
+  if exists(root, "CMakeLists.txt") then
+    table.insert(lines, "CMake:   " .. require("config.cmake").status(root))
+  end
+  return table.concat(lines, "\n")
 end
 
 -- The build is detached (its own process group), so Neovim exiting no longer

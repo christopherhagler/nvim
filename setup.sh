@@ -197,6 +197,10 @@ check_optional_deps() {
   )
   # gdb drives C/C++ debugging on Linux only; macOS uses codelldb
   [ "$(uname -s)" = "Linux" ] && items+=("gdb:gdb (C/C++ debugging via cpptools)")
+  # macOS /usr/bin/make is 3.81, which has no --output-sync; parallel Make builds
+  # (lua/config/make.lua) keep recursive output in order only with GNU make 4+
+  [ "$(uname -s)" = "Darwin" ] \
+    && items+=("gmake:GNU make 4+ (ordered parallel Make builds via <leader>bb — brew install make)")
   # Mason ships clangd for macOS and Linux x86_64 only; Linux ARM64 uses the
   # distro's (lua/plugins/lsp.lua enables it from $PATH)
   [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "aarch64" ] \
