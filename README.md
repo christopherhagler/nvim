@@ -47,8 +47,8 @@ The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leade
 | `<leader>gs` / `<leader>gd` | Git status / diff |
 | `]c` / `[c` / `<leader>hp` | Next / previous Git hunk / preview hunk |
 | `<leader>hs` | Stage or unstage hunk |
-| `<C-\>` / `<leader>tt` | Toggle terminal |
-| `<Esc><Esc>` | Leave terminal mode |
+| `<C-\>` / `<leader>tt` | Toggle terminal (from terminal mode, `<Esc><Esc>` first) |
+| `<Esc><Esc>` | Leave terminal mode (in Claude's terminal, `<C-\><C-n>`) |
 | `<C-h/j/k/l>` | Move between windows |
 | `<leader>w` / `jk` | Save / leave insert mode |
 
@@ -72,7 +72,7 @@ For CMake, Debug is the default. Choose a build type with `<leader>bt`, target w
 
 ### C/C++ and CUDA
 
-Run `:CompileCommands` (or `<leader>lg`) to configure clangd's include paths and compiler flags:
+clangd needs each project's include paths and compiler flags. For CMake, `<leader>bb` sets this up: the first build links `compile_commands.json` to the project root and restarts clangd, so go-to-definition and diagnostics work from then on. To set it up without building, or for other build systems, run `:CompileCommands` (or `<leader>lg`):
 
 - **CMake:** configure the project and link its `compile_commands.json` to the project root.
 - **Make:** run a full rebuild through `bear` to record compiler commands.
@@ -93,7 +93,8 @@ Start debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/
 | `<F11>` / `<leader>di` | Step into |
 | `<S-F11>` / `<leader>do` | Step out |
 | `<S-F5>` / `<leader>dt` | Terminate |
-| `<leader>dB` | Conditional breakpoint |
+| `<leader>dB` / `<leader>dx` | Conditional breakpoint / clear all breakpoints |
+| `<leader>dC` / `<leader>dp` | Run to cursor / pause |
 | `<leader>dv` / `<leader>du` | Evaluate expression / toggle debug UI |
 | `<leader>tr` / `<leader>tf` / `<leader>ta` | Run nearest test / file / project |
 | `<leader>td` / `<leader>tl` | Debug nearest test / rerun last test |
@@ -116,6 +117,17 @@ With MATLAB installed, code runs in the persistent session managed by the langua
 - `<leader>mf` exports figures to PNG; `<F5>` starts debugging.
 
 Project paths load from a custom `matlab_setup` command, a script chosen with `:MatlabSetup path/to/script.m` (or `<leader>mP` in that script; remembered per project, `:MatlabSetup!` forgets it), a root `.prj`, or a root `startup.m` or `start.m`. Use `:MatlabSetup` to reload them and `:Matlab <code>` to evaluate code. Run MATLAB tests with `runtests` in the command window. Without MATLAB, Octave can run scripts; full language and debugging features require MATLAB.
+
+## Claude Code
+
+With the `claude` CLI installed, Claude sees your open files, selection, and diagnostics, and proposes edits as diffs in Neovim.
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>cc` / `<leader>cf` | Toggle / focus Claude |
+| `<leader>cb` / `<leader>cs` | Add current file / send selection |
+| `<leader>cy` / `<leader>cn` | Accept / reject proposed diff |
+| `<leader>cm` | Select model |
 
 ## Project configuration
 
