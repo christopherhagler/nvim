@@ -244,6 +244,9 @@ function M.build(cmd, on_success)
     or (NVCC_EFM .. "," .. vim.o.errorformat)
   if not save("wall") then return end
   vim.notify(("Building (%s): %s"):format(label, cmd), vim.log.levels.INFO)
+  -- A CMake build also (re)writes compile_commands.json; see after_cmake_build
+  local cmake_build = label:match("^cmake") ~= nil
+  local had_db = cmake_build and require("config.compiledb").cmake_db_exists(root)
 
   -- detach: the build gets its own process group, so <leader>bk can signal
   -- cmake/make/the compilers as well as the sh wrapper (see stop()).
@@ -262,6 +265,9 @@ function M.build(cmd, on_success)
 
     local items = vim.fn.getqflist()
     local valid = #vim.tbl_filter(function(i) return i.valid == 1 end, items)
+    -- Whatever the exit code: a compile error after a successful configure
+    -- still leaves a fresh database, and that is when clangd's view matters
+    if cmake_build then require("config.compiledb").after_cmake_build(root, had_db) end
 
     if res.code == 0 then
       vim.cmd("cclose")

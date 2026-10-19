@@ -159,6 +159,28 @@ local function write_clangd_config(root)
   restart_clangd()
 end
 
+--- Whether clangd can already see a compile database for this CMake project:
+--- at the root (a real file or a resolving link) or in the build directory.
+function M.cmake_db_exists(root)
+  return vim.uv.fs_stat(root .. "/compile_commands.json") ~= nil
+    or vim.uv.fs_stat(require("config.cmake").binary_dir(root) .. "/compile_commands.json") ~= nil
+end
+
+--- After a <leader>bb CMake build (lua/config/build.lua). clangd only looks for
+--- a compile database when it opens a file, so one that first appears now goes
+--- unseen — every project header stays "file not found" — until clangd
+--- restarts. A database that already existed needs nothing: clangd reloads it
+--- when it changes, and restarting on every build would mean re-indexing.
+--- @param existed boolean whether cmake_db_exists() was true before the build
+function M.after_cmake_build(root, existed)
+  link_to_root(root, require("config.cmake").binary_dir(root))
+  ensure_cuda_clangd(root)
+  if not existed and M.cmake_db_exists(root) then
+    notify("compile_commands.json created — restarting clangd")
+    restart_clangd()
+  end
+end
+
 --- Generate compile_commands.json for the current project and restart clangd.
 function M.generate()
   local root = require("config.project").root()

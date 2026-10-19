@@ -173,6 +173,24 @@ local function test()
   session.eval = eval
   vim.cmd.close()
 
+  -- A CMake build that creates the first compile database restarts clangd
+  -- (it never rescans for one) and links it into the root; later builds,
+  -- whose database clangd already watches, leave it running.
+  local compiledb = require("config.compiledb")
+  local cmd, get_clients, restarts = vim.cmd, vim.lsp.get_clients, 0
+  vim.lsp.get_clients = function() return { {} } end
+  vim.cmd = function(c) if c == "lsp restart clangd" then restarts = restarts + 1 end end
+  local stubbed_ok, stubbed_err = pcall(function()
+    equal(compiledb.cmake_db_exists(a), false)
+    write(a .. "/build/compile_commands.json", { "[]" })
+    compiledb.after_cmake_build(a, false)
+    compiledb.after_cmake_build(a, true)
+  end)
+  vim.cmd, vim.lsp.get_clients = cmd, get_clients
+  assert(stubbed_ok, stubbed_err)
+  equal(restarts, 1)
+  equal(vim.uv.fs_readlink(a .. "/compile_commands.json"), a .. "/build/compile_commands.json")
+
   -- Recovery protections use central directories and retain the old undo path.
   require("config.options")
   assert(vim.o.swapfile and vim.o.writebackup and vim.o.undofile)
