@@ -25,7 +25,7 @@ return {
     },
     opts = {
       -- Use Neovim's built-in terminal instead of pulling in folke/snacks.nvim;
-      -- general-purpose terminals stay with toggleterm (<C-\\> / <leader>tt).
+      -- general-purpose terminals stay with toggleterm (<C-\\> / <leader>T).
       terminal = { provider = "native" },
     },
   },

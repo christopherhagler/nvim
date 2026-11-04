@@ -358,7 +358,7 @@ M.handlers = {
       local items = require("config.matlab_errors").parse(state.trace, state.trace_root)
       if #items > 0 then
         vim.fn.setqflist({}, " ", { title = "MATLAB runtime errors", items = items })
-        vim.notify("MATLAB: " .. #items .. " stack location(s); use ]q / [q or <leader>xc", vim.log.levels.WARN)
+        vim.notify("MATLAB: " .. #items .. " stack location(s); use ]q / [q or <leader>xq", vim.log.levels.WARN)
       end
       state.trace, state.trace_root = "", nil
     end

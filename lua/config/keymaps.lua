@@ -33,16 +33,17 @@ map("x", ">", ">gv", { desc = "Indent right" })
 -- Clear search highlight
 map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
 
--- Buffer navigation
-map("n", "]b", "<cmd>bnext<cr>",     { desc = "Next buffer" })
-map("n", "[b", "<cmd>bprevious<cr>", { desc = "Prev buffer" })
+-- The leader took stock "," (repeat f/t backward); this gives it back as ",,".
+-- Operators such as d, still work: there are no operator-pending leader maps.
+map({ "n", "x" }, "<leader>,", ",", { desc = "Repeat f/t backward" })
 
 -- Quickfix / location list navigation. This is the list every compiler error,
 -- grep hit and LSP reference lands in, so it needs motions as cheap as ]b.
 -- Both wrap: :cnext at the end of the list raises E553 rather than cycling,
--- which is never what you want mid-build.
+-- which is never what you want mid-build. A count moves that many items, as
+-- it does on the stock keys.
 local function list_jump(step, wrap)
-  if not pcall(vim.cmd, step) then pcall(vim.cmd, wrap) end
+  if not pcall(vim.cmd, vim.v.count1 .. step) then pcall(vim.cmd, wrap) end
   pcall(vim.cmd, "normal! zz")
 end
 
@@ -51,22 +52,33 @@ map("n", "[q", function() list_jump("cprevious", "clast") end,  { desc = "Prev q
 map("n", "]l", function() list_jump("lnext", "lfirst") end,     { desc = "Next loclist item" })
 map("n", "[l", function() list_jump("lprevious", "llast") end,  { desc = "Prev loclist item" })
 
--- Toggle the quickfix window itself (Trouble's <leader>xq is the prettier
--- view; this is the raw list, which is what :make and :grep populate)
-map("n", "<leader>xc", function()
+-- Toggle the raw list windows, which are what :make and :grep populate.
+-- Capitals open the same lists in Trouble (lua/plugins/ui.lua).
+map("n", "<leader>xq", function()
   local open = vim.iter(vim.fn.getwininfo()):any(function(w) return w.quickfix == 1 and w.loclist == 0 end)
   vim.cmd(open and "cclose" or "copen")
 end, { desc = "Toggle quickfix window" })
+map("n", "<leader>xl", function()
+  if vim.fn.getloclist(0, { winid = 0 }).winid ~= 0 then
+    vim.cmd.lclose()
+  elseif not pcall(vim.cmd.lopen) then
+    vim.notify("No location list for this window", vim.log.levels.INFO)
+  end
+end, { desc = "Toggle location list window" })
+map("n", "<leader>xd", function() vim.diagnostic.setloclist() end, { desc = "Diagnostics to location list" })
 
 -- Show diagnostics for the current line
 map("n", "<leader>e", vim.diagnostic.open_float, { desc = "Line diagnostics" })
--- Errors only: clang-tidy warnings bury the real errors under ]d / [d. Global,
--- not LSP-scoped, since linters report diagnostics too.
+-- Neovim's own ]d / [d, plus the float showing the message. Global, not
+-- LSP-scoped, since linters report diagnostics too.
+map("n", "]d", function() vim.diagnostic.jump({ count = vim.v.count1, float = true }) end, { desc = "Next diagnostic" })
+map("n", "[d", function() vim.diagnostic.jump({ count = -vim.v.count1, float = true }) end, { desc = "Prev diagnostic" })
+-- Errors only: clang-tidy warnings bury the real errors under ]d / [d.
 map("n", "]e", function()
-  vim.diagnostic.jump({ count = 1, severity = vim.diagnostic.severity.ERROR, float = true })
+  vim.diagnostic.jump({ count = vim.v.count1, severity = vim.diagnostic.severity.ERROR, float = true })
 end, { desc = "Next error" })
 map("n", "[e", function()
-  vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.ERROR, float = true })
+  vim.diagnostic.jump({ count = -vim.v.count1, severity = vim.diagnostic.severity.ERROR, float = true })
 end, { desc = "Prev error" })
 
 -- Build / run. Detection and the quickfix plumbing live in lua/config/build.lua;

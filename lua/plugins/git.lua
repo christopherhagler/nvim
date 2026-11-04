@@ -53,8 +53,8 @@ return {
           map("n", "<leader>hS", gs.stage_buffer,    "Stage buffer")
           map("n", "<leader>hR", gs.reset_buffer,    "Reset buffer")
           map("n", "<leader>hp", gs.preview_hunk,    "Preview hunk")
-          map("n", "<leader>hb", function() gs.blame_line({ full = true }) end, "Blame line")
-          map("n", "<leader>hd", gs.diffthis, "Diff this")
+          -- Under Git beside <leader>gb (file blame); <leader>h is hunks only
+          map("n", "<leader>gB", function() gs.blame_line({ full = true }) end, "Blame line")
         end,
       })
     end,

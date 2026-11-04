@@ -137,15 +137,12 @@ return {
 
           -- Actions
           map("<leader>rn", vim.lsp.buf.rename, "Rename symbol")
-          map("<leader>lr", vim.lsp.buf.rename, "Rename symbol")
           -- Visual mode as well as normal: a code action over a *range* is how
           -- clangd offers "extract function" and "extract variable", which are
           -- the two refactorings that only make sense on a selection. Without
           -- the visual binding they were unreachable except through the stock
           -- `gra` that the block above deletes.
           map("<leader>a", vim.lsp.buf.code_action, "Code actions", { "n", "x" })
-          -- The same two under the LSP group, where which-key lists them
-          map("<leader>la", vim.lsp.buf.code_action, "Code actions", { "n", "x" })
           map("<leader>re", function()
             vim.lsp.buf.code_action({ context = { only = { "refactor" } } })
           end, "Refactor", { "n", "x" })
@@ -173,11 +170,8 @@ return {
           -- <leader>lf (format) is global — see lua/config/keymaps.lua. conform
           -- formats plenty of filetypes that have no LSP server attached.
 
-          -- Diagnostics
-          -- Neovim's own [d / ]d, plus the float showing the message
-          map("[d",          function() vim.diagnostic.jump({ count = -1, float = true }) end, "Prev diagnostic")
-          map("]d",          function() vim.diagnostic.jump({ count =  1, float = true }) end, "Next diagnostic")
-          map("<leader>xf",  vim.diagnostic.setloclist, "Diagnostics to location list")
+          -- Diagnostic keys are global (lua/config/keymaps.lua): linters report
+          -- them in buffers with no language server.
 
           -- Inlay hints and CodeLens are the only two features here that talk to
           -- the server without being asked, so they are the two that can fail in

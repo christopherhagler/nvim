@@ -44,16 +44,41 @@ The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leade
 | `[d` / `]d` / `<leader>e` | Previous / next diagnostic / show message |
 | `[e` / `]e` | Previous / next error (skips warnings) |
 | `<leader>xx` | Open project diagnostics |
-| `[q` / `]q` / `<leader>xc` | Previous / next quickfix item / toggle list |
+| `[q` / `]q` / `<leader>xq` | Previous / next quickfix item / toggle list |
+| `[l` / `]l` / `<leader>xl` | Previous / next location list item / toggle list |
+| `<leader>xd` | Send diagnostics to the location list |
+| `<leader>xQ` / `<leader>xL` | Quickfix / location list in Trouble |
 | `<leader>gs` / `<leader>gd` | Git status / diff |
 | `]c` / `[c` / `<leader>hp` | Next / previous Git hunk / preview hunk |
 | `<leader>hs` | Stage or unstage hunk |
-| `<C-\>` / `<leader>tt` | Toggle terminal (from terminal mode, `<Esc><Esc>` first) |
+| `<C-\>` / `<leader>T` | Toggle terminal |
+| `<C-\><C-\>` | Hide terminal, from terminal mode |
 | `<Esc><Esc>` | Leave terminal mode (in Claude's terminal, `<C-\><C-n>`) |
-| `<C-h/j/k/l>` | Move between windows (in a terminal, `<C-h>` / `<C-j>` only; `<C-k>` / `<C-l>` stay with the shell) |
+| `<C-h/j/k/l>` | Move between windows |
+| `<C-\>h/j/k/l` | Move between windows, from terminal mode (`<C-h/j/k/l>` stay with the program) |
 | `<leader>w` / `jk` | Save / leave insert mode |
+| `<leader>,` | Repeat `f` / `t` backward (`,` is the leader) |
+| `<leader>o` / `<leader>u` | Toggle outline / undo tree |
 
 Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `<CR>` accepts a selected item. Nothing is preselected. `<Esc>` dismisses the menu; `jk` leaves insert mode.
+
+## Navigate and edit
+
+| Key | Action |
+| :--- | :--- |
+| `gD` / `gy` / `gI` | Go to declaration / type definition / implementation |
+| `]f` / `[f` | Next / previous function start |
+| `]F` / `[F` | Next / previous function end |
+| `]k` / `[k` | Next / previous class |
+| `a` or `i` + `f` `c` `a` `i` `l` `m` | Around / inside function, class, parameter, conditional, loop, call (`daf`, `vic`) |
+| `ih` | Inside Git hunk |
+| `<leader>sa` / `<leader>sA` | Swap parameter with next / previous |
+| `<leader>sf` / `<leader>sF` | Swap function with next / previous |
+| `<leader>ld` | Generate doc comment |
+| `<leader>K` | Man page for the word under the cursor (C/C++/CUDA) |
+| `<leader>rr` / `<leader>rw` / `<leader>rf` | Replace in project / word under cursor / current file (`<leader>rr` also takes a selection) |
+| `<leader>ra` | Apply replacements, inside the replace window |
+| `<leader>qs` / `<leader>ql` / `<leader>qd` | Restore this directory's session / restore last session / don't save on exit |
 
 ## Build and run
 
@@ -121,7 +146,7 @@ Language tools, runs, debugging, and pytest share the detected project interpret
 
 With MATLAB installed, code runs in the persistent session managed by the language server:
 
-- `<leader>br` runs the file; `<leader>ms` runs a `%%` section or visual selection; `<leader>ml` runs the line.
+- `<leader>br` runs the file; `<leader>ms` runs a `%%` section or visual selection; `<leader>ml` runs the line. `]]` / `[[` move between `%%` sections.
 - `<leader>mc` opens the command window; `<leader>mk` interrupts; `<leader>mo` toggles output.
 - `<leader>mf` exports figures to PNG; `<F5>` starts debugging.
 

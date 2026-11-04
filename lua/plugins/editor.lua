@@ -187,7 +187,7 @@ return {
 
   -- Project-wide search and replace. Telescope finds across the project but
   -- cannot change anything; this is the write half. Results open in a normal
-  -- buffer you edit in place, then <leader>rp applies them across every file.
+  -- buffer you edit in place, then <leader>ra applies them across every file.
   -- Backed by the same ripgrep the RPM already bundles (rpm/build-rpm.sh).
   {
     "MagicDuck/grug-far.nvim",

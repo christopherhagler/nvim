@@ -3,8 +3,7 @@
 -- results attach to the source as signs, and the same keypress that runs a test
 -- can run it under the debugger instead.
 --
--- Keys live under <leader>t (the terminal toggle is <C-\>, with <leader>tt
--- as its alias in the same group).
+-- Keys live under <leader>t.
 return {
   {
     "nvim-neotest/neotest",

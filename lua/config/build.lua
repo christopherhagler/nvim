@@ -634,7 +634,7 @@ function M.run()
   end
 
   vim.fn.jobstart(cmd, { cwd = root, term = true })
-  -- Terminal-mode keys (<Esc><Esc>, <C-h/j/k/l>, and <leader>br itself) come
+  -- Terminal-mode keys (<Esc><Esc> and <C-\>h/j/k/l) come
   -- from the global TermOpen autocmd in lua/config/autocmds.lua.
   vim.cmd("startinsert") -- so a program that reads stdin is immediately usable
 end

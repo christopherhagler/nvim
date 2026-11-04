@@ -5,7 +5,8 @@ require("config.indent").apply()
 
 -- Cell/section markers (%%) are how MATLAB scripts are structured; ]] / [[
 -- walk them the way the MATLAB editor's "next section" does. Buffer-local,
--- so the treesitter class motions on those keys are untouched elsewhere.
+-- so stock ]] / [[ are untouched elsewhere; stock's "{ in column 0" means
+-- nothing in MATLAB.
 local function section(flags)
   return function()
     if vim.fn.search([[^\s*%%\(\s\|$\)]], flags .. "W") == 0 then
