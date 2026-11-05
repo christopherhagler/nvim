@@ -58,9 +58,94 @@ The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leade
 | `<C-\>h/j/k/l` | Move between windows, from terminal mode (`<C-h/j/k/l>` stay with the program) |
 | `<leader>w` / `jk` | Save / leave insert mode |
 | `<leader>,` | Repeat `f` / `t` backward (`,` is the leader) |
-| `<leader>o` / `<leader>u` | Toggle outline / undo tree |
+| `<F8>` / `<leader>o` / `<leader>u` | Toggle outline (both keys) / undo tree |
 
 Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `<CR>` accepts a selected item. Nothing is preselected. `<Esc>` dismisses the menu; `jk` leaves insert mode.
+
+## Everyday Vim
+
+Stock Vim keys you will reach for daily. Yanks and deletes go to the system clipboard.
+
+**Open two files side by side**
+
+| Key | Action |
+| :--- | :--- |
+| `:vs path/to/file` | Open a file in a split on the right (`:sp` opens below) |
+| `<leader>ff`, type a name, `<C-v>` | Open the picked file on the right (`<C-x>` below, `<C-t>` in a new tab) |
+| `<leader>n`, move to a file, `<C-v>` | Open it from the explorer on the right (`<C-x>` below, `<C-t>` in a new tab) |
+| `<C-w>v` / `<C-w>s` | Split the current window right / below |
+| `<C-h/j/k/l>` | Move between the windows |
+| `:vs other_file`, then `:windo diffthis` | Compare the two files; `:diffoff!` ends it (`:diffsplit other_file` opens and compares in one step) |
+
+**Windows, tabs, and files**
+
+| Key | Action |
+| :--- | :--- |
+| `<C-w>q` / `<C-w>o` | Close this window / close all the others |
+| `<C-w>x` | Swap this window with the next one |
+| `<C-w>=` | Make windows equal size |
+| `<C-w>\|` / `<C-w>_` | Maximize width / height |
+| `5<C-w>>` / `5<C-w><` | Wider / narrower by 5 columns |
+| `2<C-w>+` / `2<C-w>-` | Taller / shorter by 2 lines |
+| `:tabnew file` / `gt` / `gT` / `:tabclose` | New tab / next / previous / close |
+| `<C-^>` | Jump back to the previous file |
+| `]b` / `[b` | Next / previous buffer |
+| `:bd` | Close the current file |
+| `gf` / `gx` | Open the file path / URL under the cursor |
+| `:w` / `:wa` / `:q` / `:qa` | Save / save all / close window / quit |
+
+**Select, copy, and paste**
+
+| Key | Action |
+| :--- | :--- |
+| `ggVG` | Select all (`<C-a>` increments a number; it is not select all) |
+| `ggVGy` or `:%y` | Copy the whole file |
+| `ggdG` | Delete the whole file's contents |
+| `v` / `V` / `<C-v>` | Select characters / lines / a block |
+| `viw` / `vi(` / `vi"` | Select a word / inside parentheses / inside quotes |
+| `gv` | Reselect the last selection |
+| `<C-v>`, move, `I`, type, `<Esc>` | Insert the same text on several lines |
+| `yy` / `dd` / `p` / `P` | Copy line / cut line / paste after / paste before |
+| `y` / `d` / `c` on a selection | Copy / cut / replace it |
+| `"_d` | Delete without overwriting the clipboard |
+
+**Edit**
+
+| Key | Action |
+| :--- | :--- |
+| `u` / `<C-r>` | Undo / redo |
+| `.` | Repeat the last change |
+| `ciw` / `ci"` / `ci(` | Replace a word / inside quotes / inside parentheses |
+| `gcc` / `gc` on a selection | Toggle comment on a line / the selection |
+| `>>` / `<<` | Indent / outdent a line (`>` / `<` keep a selection selected) |
+| `gg=G` | Reindent the file (`<leader>lf` formats it) |
+| `J` | Join the next line onto this one |
+| `gUiw` / `guiw` | Uppercase / lowercase a word |
+| `<C-a>` / `<C-x>` | Increment / decrement the number under the cursor |
+| `]<Space>` / `[<Space>` | Add a blank line below / above |
+| `ysiw"` / `cs"'` / `ds'` | Surround a word with `"` / change `"` to `'` / remove `'` |
+| `S)` on a selection | Surround the selection with parentheses |
+| `qa` ... `q` / `@a` / `@@` | Record macro `a` / play it / play it again |
+| `:%s/old/new/gc` | Replace in this file, confirming each (`<leader>rr` for the project) |
+| `gi` | Return to the last insert position |
+| `<C-w>` in insert mode | Delete the previous word |
+
+**Move and search**
+
+| Key | Action |
+| :--- | :--- |
+| `gg` / `G` / `42G` | First line / last line / line 42 |
+| `w` / `b` / `0` / `$` | Next word / previous word / line start / line end |
+| `<C-d>` / `<C-u>` | Half a page down / up, centered |
+| `%` | Jump to the matching bracket |
+| `<C-o>` / `<C-i>` | Back / forward through jump history |
+| `ma` / `'a` | Set mark `a` / jump to it |
+| `/text` / `n` / `N` | Search / next / previous, centered |
+| `*` / `#` | Search for the word under the cursor, forward / backward |
+| `<Esc>` | Clear search highlight |
+| `<M-n>` / `<M-p>` | Next / previous reference to the symbol under the cursor (Alt/Option must send Meta in your terminal) |
+| `zc` / `zo` / `za` | Close / open / toggle a fold |
+| `zM` / `zR` | Close / open all folds |
 
 ## Navigate and edit
 
@@ -70,15 +155,65 @@ Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `
 | `]f` / `[f` | Next / previous function start |
 | `]F` / `[F` | Next / previous function end |
 | `]k` / `[k` | Next / previous class |
+| `]]` / `[[` | Next / previous `{` in the first column, Vim's C function jump |
 | `a` or `i` + `f` `c` `a` `i` `l` `m` | Around / inside function, class, parameter, conditional, loop, call (`daf`, `vic`) |
 | `ih` | Inside Git hunk |
 | `<leader>sa` / `<leader>sA` | Swap parameter with next / previous |
 | `<leader>sf` / `<leader>sF` | Swap function with next / previous |
 | `<leader>ld` | Generate doc comment |
+| `<leader>re` | Refactor actions, on the cursor or a selection |
 | `<leader>K` | Man page for the word under the cursor (C/C++/CUDA) |
 | `<leader>rr` / `<leader>rw` / `<leader>rf` | Replace in project / word under cursor / current file (`<leader>rr` also takes a selection) |
 | `<leader>ra` | Apply replacements, inside the replace window |
 | `<leader>qs` / `<leader>ql` / `<leader>qd` | Restore this directory's session / restore last session / don't save on exit |
+| `<leader>L` | Redraw the screen and update diffs |
+
+## Search, Git, and language tools
+
+**Find**
+
+| Key | Action |
+| :--- | :--- |
+| `<C-p>` / `<leader>ff` | Files |
+| `<leader>fg` / `<leader>fw` | Project text / word or selection |
+| `<leader>f/` | Text in this file |
+| `<leader>fb` / `<leader>fr` / `<leader>fc` | Open buffers / recent files / changed files |
+| `<leader>fs` / `<leader>fS` | Symbols in this file / workspace |
+| `<leader>fd` | Diagnostics |
+| `<leader>fh` / `<leader>fk` | Help / keymaps |
+| `<leader>fp` | Reopen the last picker |
+
+**Git**
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>gs` / `<leader>gd` / `<leader>gl` | Status / diff / log |
+| `<leader>gc` / `<leader>gp` | Commit / push |
+| `<leader>gb` / `<leader>gB` | Blame the file / this line |
+| `]c` / `[c` | Next / previous hunk |
+| `<leader>hp` | Preview hunk |
+| `<leader>hs` / `<leader>hr` | Stage or unstage / reset a hunk or selection |
+| `<leader>hS` / `<leader>hR` | Stage / reset the whole buffer |
+
+**Diagnostics and lists**
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>e` | Show this line's diagnostics |
+| `<leader>xx` / `<leader>xb` | Diagnostics in Trouble, for the project / this buffer |
+| `<leader>xq` / `<leader>xQ` | Quickfix list, raw / in Trouble |
+| `<leader>xl` / `<leader>xL` | Location list, raw / in Trouble |
+| `<leader>xd` | Send diagnostics to the location list |
+
+**Language**
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>lf` | Format buffer or selection |
+| `<leader>lI` / `<leader>lO` | Incoming / outgoing calls |
+| `<leader>lb` / `<leader>lB` | Base / derived types, where the server supports them |
+| `<leader>li` / `<leader>lc` | Toggle inlay hints / run CodeLens, where the server supports them |
+| `<leader>lh` / `<leader>lg` | Switch source and header (clangd) / set up the compile database (C/C++/CUDA) |
 
 ## Build and run
 
@@ -89,6 +224,7 @@ Completion: `<Tab>` / `<S-Tab>` select an item or move between snippet fields; `
 | `<leader>bd` | Build, then debug on success |
 | `<leader>bc` | Choose this project's build command (remembered) |
 | `<leader>bT` | Choose the target to build (CMake or Make) |
+| `<leader>bt` / `<leader>bp` | Choose the CMake build type / configure preset |
 | `<leader>bi` | Show exactly what `<leader>bb` runs, and why |
 | `<leader>bk` | Stop build |
 
@@ -116,7 +252,7 @@ CUDA editing uses clangd and clang-format. Building requires `nvcc`; kernel debu
 
 ## Debug and test
 
-Start debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/C++ offers an executable picker. Project `.vscode/launch.json` configurations are loaded automatically.
+Start or continue debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/C++ offers an executable picker. Project `.vscode/launch.json` configurations are loaded automatically.
 
 | Key | Action |
 | :--- | :--- |
@@ -129,9 +265,11 @@ Start debugging with `<F5>` or `<leader>dc`; use `<leader>bd` to build first. C/
 | `<leader>dB` / `<leader>dx` | Conditional breakpoint / clear all breakpoints |
 | `<leader>dC` / `<leader>dp` | Run to cursor / pause |
 | `<leader>dv` / `<leader>du` | Evaluate expression / toggle debug UI |
+| `<leader>dr` / `<leader>de` / `<leader>dl` | Debug REPL / exception breakpoints / rerun last session |
 | `<leader>tr` / `<leader>tf` / `<leader>ta` | Run nearest test / file / project |
 | `<leader>td` / `<leader>tl` | Debug nearest test / rerun last test |
-| `<leader>ts` / `<leader>to` | Test summary / test output |
+| `<leader>ts` / `<leader>to` / `<leader>tp` | Test summary / test output / output panel |
+| `<leader>tk` / `<leader>tw` | Stop running test / watch file |
 | `]x` / `[x` | Next / previous failed test |
 
 Debugging supports C/C++, CUDA, Python, MATLAB, JS/TS, and Bash. C/C++ uses LLDB on macOS and gdb on Linux. Leader mappings also work when your terminal captures function keys.
@@ -146,9 +284,10 @@ Language tools, runs, debugging, and pytest share the detected project interpret
 
 With MATLAB installed, code runs in the persistent session managed by the language server:
 
-- `<leader>br` runs the file; `<leader>ms` runs a `%%` section or visual selection; `<leader>ml` runs the line. `]]` / `[[` move between `%%` sections.
+- `<leader>br` or `<leader>mr` runs the file; `<leader>ms` runs a `%%` section or visual selection; `<leader>ml` runs the line. `]]` / `[[` move between `%%` sections.
 - `<leader>mc` opens the command window; `<leader>mk` interrupts; `<leader>mo` toggles output.
-- `<leader>mf` exports figures to PNG; `<F5>` starts debugging.
+- `<leader>mf` exports figures to PNG; `<leader>mx` closes all figures; `<F5>` starts debugging.
+- `<leader>mh` shows help for the word under the cursor; `<leader>mw` lists workspace variables; `<leader>mp` reruns project path setup.
 
 Project paths load from a custom `matlab_setup` command, a script chosen with `:MatlabSetup path/to/script.m` (or `<leader>mP` in that script; remembered per project, `:MatlabSetup!` forgets it), a root `.prj`, or a root `startup.m` or `start.m`. Use `:MatlabSetup` to reload them and `:Matlab <code>` to evaluate code. Run MATLAB tests with `runtests` in the command window. Without MATLAB, Octave can run scripts; full language and debugging features require MATLAB.
 
@@ -162,6 +301,75 @@ With the `claude` CLI installed, Claude sees your open files, selection, and dia
 | `<leader>cb` / `<leader>cs` | Add current file / send selection |
 | `<leader>cy` / `<leader>cn` | Accept / reject proposed diff |
 | `<leader>cm` | Select model |
+
+## Keys inside plugin windows
+
+Press `q` to close help, man pages, quickfix, Trouble, and the outline. `g?` lists the keys in the explorer, Git status, and project replace windows; `?` does in the test summary.
+
+**File picker**
+
+| Key | Action |
+| :--- | :--- |
+| `<CR>` | Open here |
+| `<C-v>` / `<C-x>` / `<C-t>` | Open on the right / below / in a new tab |
+| `<C-j>` / `<C-k>` | Next / previous result |
+| `<Tab>` | Mark a result |
+| `<C-q>` | Send marked results, or all results if none are marked, to quickfix |
+| `<Esc>` | Close |
+
+**File explorer**
+
+| Key | Action |
+| :--- | :--- |
+| `<CR>` | Open file or folder |
+| `<C-v>` / `<C-x>` / `<C-t>` | Open on the right / below / in a new tab |
+| `a` / `r` / `d` | Create (end with `/` for a folder) / rename / delete |
+| `x` / `c` / `p` | Cut / copy / paste |
+| `y` / `Y` | Copy name / relative path |
+| `-` | Go up a folder |
+| `H` / `I` | Toggle dotfiles / Git-ignored files |
+| `f` / `F` | Filter / clear filter |
+| `R` / `q` | Refresh / close |
+
+**Git status (`<leader>gs`)**
+
+| Key | Action |
+| :--- | :--- |
+| `s` / `u` | Stage / unstage the file under the cursor |
+| `=` | Show or hide its diff inline |
+| `dv` | Open its diff in a split |
+| `cc` | Commit |
+| `gq` | Close (`q` starts recording a macro here) |
+
+**Test summary (`<leader>ts`)**
+
+| Key | Action |
+| :--- | :--- |
+| `r` / `d` | Run / debug the test under the cursor |
+| `m` / `R` / `M` | Mark / run marked / clear marks |
+| `o` / `O` | Show full / short output |
+| `i` | Jump to the test |
+| `J` / `K` | Next / previous failed test |
+| `w` / `u` | Watch / stop |
+| `<CR>` / `e` | Expand / expand all |
+
+**Project replace (`<leader>rr`)**
+
+The window opens in insert mode; press `<Esc>` before these keys.
+
+| Key | Action |
+| :--- | :--- |
+| `<leader>ra` | Apply all replacements |
+| `\j` / `\k` | Apply next / previous |
+| `<leader>rs` / `<leader>rl` | Save edits made in the results to their files / this line only |
+| `\v` / `\n` / `\p` | Save edits for this file / next / previous |
+| `<leader>rq` | Send results to quickfix |
+| `<leader>ru` / `\b` | Refresh / abort |
+| `<leader>rh` / `\a` | Open history / add to history |
+| `<leader>rx` / `\e` | Swap replacement interpreter / search engine |
+| `<leader>rm` | Show the search command |
+| `\i` / `\o` | Preview / open the result under the cursor |
+| `<leader>rc` | Close |
 
 ## Project configuration
 
