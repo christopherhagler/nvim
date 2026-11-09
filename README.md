@@ -29,7 +29,7 @@ On RHEL/Rocky 8, use a Neovim build compatible with glibc 2.28. On Linux ARM64, 
 
 ## Essential shortcuts
 
-The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leader to see available mappings, or use `<leader>fk` to search all keymaps.
+The leader key is **`,`**: `<leader>ff` means press `,ff`. Pause after the leader to see available mappings. Forgot a key? `<leader>?` (or `<leader>fk`) searches every keymap by what it does: type `hunk`, `step`, or `format`.
 
 | Key | Action |
 | :--- | :--- |
@@ -180,7 +180,7 @@ Stock Vim keys you will reach for daily. Yanks and deletes go to the system clip
 | `<leader>fb` / `<leader>fr` / `<leader>fc` | Open buffers / recent files / changed files |
 | `<leader>fs` / `<leader>fS` | Symbols in this file / workspace |
 | `<leader>fd` | Diagnostics |
-| `<leader>fh` / `<leader>fk` | Help / keymaps |
+| `<leader>fh` / `<leader>fk` / `<leader>?` | Help / keymaps / keymaps |
 | `<leader>fp` | Reopen the last picker |
 
 **Git**

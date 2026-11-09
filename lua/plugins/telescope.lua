@@ -42,6 +42,11 @@ return {
       -- Reopen the last picker with its query and cursor position intact
       { "<leader>fp", "<cmd>Telescope resume<cr>", desc = "Resume last picker" },
       { "<leader>fk", "<cmd>Telescope keymaps<cr>", desc = "Keymaps" },
+      -- The "what was that key?" key. Same picker as <leader>fk, on the one
+      -- character everyone already associates with help, so it needs no
+      -- remembering itself. Type a word from the action ("hunk", "step",
+      -- "format") to find its key.
+      { "<leader>?", "<cmd>Telescope keymaps<cr>", desc = "Search keymaps" },
       { "<leader>fc", project_picker("git_status"), desc = "Changed files" },
     },
     config = function()
